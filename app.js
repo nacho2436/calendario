@@ -117,7 +117,7 @@ function nuevoUsuario(nombre){
     notas: [{
       id: uid('note'), titulo: '¡Hola! 👋 Nota de bienvenida',
       desc: 'Haz clic en cualquier día del calendario para agregar tus notas y recordatorios.',
-      fecha: todayKey(), hora: '09:00', catId: cats[0].id, color: '', done: false, creada: Date.now(),
+      fecha: todayKey(), hora: '09:00', catId: cats[0].id, color: '', repeticion: '', done: false, creada: Date.now(),
     }],
   };
 }
@@ -147,6 +147,43 @@ const catDe       = nota => yo().categorias.find(c => c.id === nota.catId);
 const colorDe     = nota => nota.color || catDe(nota)?.color || '#8d99ae';
 const notasDel    = key  => yo().notas.filter(n => n.fecha === key);
 const notasVisibles = () => (ui.filterCat ? yo().notas.filter(n => n.catId === ui.filterCat) : yo().notas);
+
+/* ─────────── Notas repetitivas ───────────
+   Una nota con repetición ocurre en su fecha de inicio y, a partir de
+   ella: cada día, cada 7 días, el mismo día de cada mes o el mismo día
+   de cada año. Se edita/borra la serie completa. */
+const REP_CORTO = { diaria: 'cada día', semanal: 'cada semana', mensual: 'cada mes', anual: 'cada año' };
+
+function diasEntre(a, b){
+  const [ay, am, ad] = a.split('-').map(Number);
+  const [by, bm, bd] = b.split('-').map(Number);
+  return Math.round((Date.UTC(by, bm - 1, bd) - Date.UTC(ay, am - 1, ad)) / 86400000);
+}
+function ocurreEn(nota, key){
+  if (!nota.repeticion) return nota.fecha === key;
+  if (key < nota.fecha) return false;
+  const [ny, nm, nd] = nota.fecha.split('-').map(Number);
+  const [y, m, d] = key.split('-').map(Number);
+  switch (nota.repeticion){
+    case 'diaria':  return true;
+    case 'semanal': return diasEntre(nota.fecha, key) % 7 === 0;
+    case 'mensual': return d === nd && (y * 12 + m) >= (ny * 12 + nm);
+    case 'anual':   return d === nd && m === nm && y >= ny;
+  }
+  return false;
+}
+/** Próxima fecha en que ocurre la nota (hoy o después). */
+function proximaFecha(nota){
+  if (!nota.repeticion || nota.fecha >= todayKey()) return nota.fecha;
+  let d = new Date();
+  for (let i = 0; i < 800; i++){
+    const k = keyOf(d);
+    if (ocurreEn(nota, k)) return k;
+    d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
+  }
+  return nota.fecha;
+}
+const notasQueOcurren = key => yo().notas.filter(n => ocurreEn(n, key));
 
 /* Estado de la interfaz */
 const HOY = new Date();
@@ -241,21 +278,24 @@ function renderGrid(){
     const festivo  = nombreFestivo(key);
     const esDomingo = d.getDay() === 0;
     const esSabado  = d.getDay() === 6;
-    const notas = notasDel(key)
+    const notas = notasQueOcurren(key)
       .filter(n => !ui.filterCat || n.catId === ui.filterCat)
       .sort((a, b) => (a.hora || '').localeCompare(b.hora || ''));
-    const puntos = notas.slice(0, 4).map(n => `<i class="dot" style="background:${colorDe(n)}"></i>`).join('');
-    const extra  = notas.length > 4 ? `<span class="more">+${notas.length - 4}</span>` : '';
+    const lineas = notas.slice(0, 3).map(n => `
+        <div class="day-note${n.done ? ' done' : ''}" style="--c:${colorDe(n)}" title="${esc(n.titulo)}">
+          <i></i><span>${n.repeticion ? '🔁 ' : ''}${esc(n.titulo)}</span>
+        </div>`).join('');
+    const extra  = notas.length > 3 ? `<span class="more">+${notas.length - 3} más</span>` : '';
     const tooltip = [
       festivo ? '🎉 Festivo: ' + festivo : '',
-      ...notas.map(n => '📝 ' + n.titulo + (n.hora ? ' (' + n.hora + ')' : '')),
+      ...notas.map(n => (n.repeticion ? '🔁 ' : '📝 ') + n.titulo + (n.hora ? ' (' + n.hora + ')' : '')),
     ].filter(Boolean).join('\n');
     html += `
       <div class="day${otroMes ? ' other' : ''}${key === todayKey() ? ' today' : ''}${festivo ? ' holiday' : ''}${esSabado ? ' weekend' : ''}${esDomingo ? ' domingo' : ''}"
            data-key="${key}" title="${esc(tooltip)}">
         <span class="day-num">${d.getDate()}</span>
         ${festivo ? `<span class="day-label">${esc(festivo)}</span>` : ''}
-        <span class="day-dots">${puntos}${extra}</span>
+        <span class="day-notes">${lineas}${extra}</span>
       </div>`;
   }
   $('#calGrid').innerHTML = html;
@@ -268,7 +308,8 @@ function renderNotas(){
   const notas = notasVisibles()
     .filter(n => (ui.estado === 'todas') || ((ui.estado === 'hechas') === !!n.done))
     .filter(n => !q || (n.titulo + ' ' + (n.desc || '')).toLowerCase().includes(q))
-    .sort((a, b) => (a.fecha + (a.hora || '')).localeCompare(b.fecha + (b.hora || '')));
+    .map(n => ({ n, cuando: proximaFecha(n) }))
+    .sort((a, b) => (a.cuando + (a.n.hora || '')).localeCompare(b.cuando + (b.n.hora || '')));
 
   const cont = $('#notesList');
   if (!notas.length){
@@ -279,10 +320,10 @@ function renderNotas(){
     return;
   }
   let html = '', claveAnterior = null;
-  for (const n of notas){
-    if (n.fecha !== claveAnterior){
-      claveAnterior = n.fecha;
-      html += `<h3 class="date-group">${esc(fmtFechaLarga(n.fecha))}</h3>`;
+  for (const { n, cuando } of notas){
+    if (cuando !== claveAnterior){
+      claveAnterior = cuando;
+      html += `<h3 class="date-group">${esc(fmtFechaLarga(cuando))}</h3>`;
     }
     html += notaCardHTML(n, { conFecha: false });
   }
@@ -302,7 +343,7 @@ function notaCardHTML(n, { conFecha = true } = {}){
         <h4>${esc(n.titulo)}</h4>
         <span class="chip" style="--c:${colorCat}">${esc(nombreCat)}</span>
       </div>
-      <p class="note-meta">${conFecha ? '📅 ' + esc(fmtFechaLarga(n.fecha)) : ''}${n.hora ? (conFecha ? ' · ⏰ ' : '⏰ ') + n.hora : ''}</p>
+      <p class="note-meta">${conFecha ? '📅 ' + esc(fmtFechaLarga(proximaFecha(n))) : ''}${n.hora ? (conFecha ? ' · ⏰ ' : '⏰ ') + n.hora : ''}${n.repeticion ? ' · 🔁 ' + REP_CORTO[n.repeticion] : ''}</p>
       ${n.desc ? `<p class="note-desc">${esc(n.desc)}</p>` : ''}
     </div>
     <div class="note-actions">
@@ -402,6 +443,7 @@ function abrirModalNota(nota = null, fechaPreset = null){
   $('#noteDate').value  = nota?.fecha || fechaPreset || todayKey();
   $('#noteTime').value  = nota?.hora || '';
   $('#noteDesc').value  = nota?.desc || '';
+  $('#noteRep').value   = nota?.repeticion || '';
   llenarSelectCats($('#noteCat'), nota?.catId);
   notePicker = construirSwatches($('#noteSwatches'), { auto: true, valor: nota?.color || '' });
   abrirModal('modal-note');
@@ -448,7 +490,7 @@ function abrirModalDia(key){
 function pintarModalDia(){
   if (!ui.dayKey) return;
   const festivo = nombreFestivo(ui.dayKey);
-  const lista = notasDel(ui.dayKey)
+  const lista = notasQueOcurren(ui.dayKey)
     .filter(n => !ui.filterCat || n.catId === ui.filterCat)
     .sort((a, b) => (a.hora || '').localeCompare(b.hora || ''));
   $('#dayModalTitle').innerHTML =
@@ -491,6 +533,7 @@ function guardarNota(e){
     desc:   $('#noteDesc').value.trim(),
     catId:  $('#noteCat').value,
     color:  notePicker.get(),
+    repeticion: $('#noteRep').value,
   };
   if (!datos.titulo || !datos.fecha) return;
   if (esEdicion) Object.assign(editandoNota, datos);
@@ -755,6 +798,7 @@ function inicializar(){
   document.addEventListener('keydown', ev => { if (ev.key === 'Escape') cerrarUltimo(); });
 
   aplicarTema();
+  guardar();   // persiste también el estado inicial la primera vez
   render();
 }
 

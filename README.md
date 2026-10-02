@@ -30,6 +30,9 @@ si el sistema lo pide. Requiere **Android 8.0 (API 26)** o superior.
 - Notas/recordatorios con título, fecha, hora, descripción, categoría
   y **color personalizado** (o el de su categoría). Se marcan como
   completadas.
+- **Notas repetitivas** (web): todos los días, cada semana, cada mes
+  o cada año; los títulos se ven en letra pequeña dentro de cada día
+  del calendario.
 - Categorías: crear, editar y eliminar (con confirmación).
 - 6 temas: Claro, Oscuro, Azul noche, Bosque, Pastel y Café.
 - Usuarios independientes con avatar emoji.
