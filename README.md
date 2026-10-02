@@ -33,6 +33,9 @@ si el sistema lo pide. Requiere **Android 8.0 (API 26)** o superior.
 - **Notas repetitivas** (web): todos los días, cada semana, cada mes
   o cada año; los títulos se ven en letra pequeña dentro de cada día
   del calendario.
+- **Avisos** (web): notifica 5/15/30 minutos, 1 o 2 horas, o 1 día
+  antes de la nota (se pueden elegir varios), con notificación del
+  navegador, aviso interno y sonido mientras la página esté abierta.
 - Categorías: crear, editar y eliminar (con confirmación).
 - 6 temas: Claro, Oscuro, Azul noche, Bosque, Pastel y Café.
 - Usuarios independientes con avatar emoji.
