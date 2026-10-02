@@ -126,8 +126,15 @@
           <input class="input" type="date" id="noteDate" required>
         </div>
         <div class="field">
-          <label for="noteTime">Hora (opcional)</label>
-          <input class="input" type="time" id="noteTime">
+          <label for="noteHora">Hora (opcional · 12 h)</label>
+          <div class="hora-12">
+            <select class="input" id="noteHora" title="Hora"></select>
+            <select class="input" id="noteMin" title="Minutos"></select>
+            <select class="input" id="noteAmpm" title="am / pm">
+              <option value="am">am</option>
+              <option value="pm">pm</option>
+            </select>
+          </div>
         </div>
       </div>
       <div class="row-2">

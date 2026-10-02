@@ -417,6 +417,8 @@ label{font-size:.8rem;font-weight:600;color:var(--text-soft);display:block;margi
 .modal h3{margin:0 0 18px;font-size:1.15rem;}
 .modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:22px;}
 .row-2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+/* Selector de hora en formato 12 h (hora · minutos · am/pm) */
+.hora-12{display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:8px;}
 .field{margin-bottom:15px;}
 .confirm-msg{color:var(--text-soft);font-size:.9rem;line-height:1.6;margin:0;}
 

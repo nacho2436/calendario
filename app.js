@@ -31,6 +31,28 @@ function fmtFechaLarga(key){
   return y !== new Date().getFullYear() ? `${base} de ${y}` : base;
 }
 
+/* Hora: se guarda en 24 h ("HH:mm") y se muestra en formato 12 h con am/pm */
+function fmtHora(hhmm){
+  if (!hhmm) return '';
+  let [h, m] = hhmm.split(':').map(Number);
+  const suf = h < 12 ? 'am' : 'pm';
+  h = (h % 12) || 12;
+  return `${h}:${pad(m)} ${suf}`;
+}
+function setHora12(hhmm){
+  if (!hhmm){ $('#noteHora').value = ''; $('#noteMin').value = '00'; $('#noteAmpm').value = 'am'; return; }
+  const [h, m] = hhmm.split(':').map(Number);
+  $('#noteAmpm').value = h < 12 ? 'am' : 'pm';
+  $('#noteHora').value = String((h % 12) || 12);
+  $('#noteMin').value  = pad(m);
+}
+function getHora12(){
+  const h = $('#noteHora').value;
+  if (!h) return '';
+  const pm = $('#noteAmpm').value === 'pm';
+  return pad((Number(h) % 12) + (pm ? 12 : 0)) + ':' + ($('#noteMin').value || '00');
+}
+
 /* ─────────── 2. Festivos de Colombia (Ley 51 de 1983) ───────────
    Los festivos diferentes de Año Nuevo, 1.º de mayo, 20 de julio,
    7 de agosto, 8 y 25 de diciembre, Jueves y Viernes Santo se
@@ -288,7 +310,7 @@ function renderGrid(){
     const extra  = notas.length > 3 ? `<span class="more">+${notas.length - 3} más</span>` : '';
     const tooltip = [
       festivo ? '🎉 Festivo: ' + festivo : '',
-      ...notas.map(n => (n.repeticion ? '🔁 ' : '📝 ') + n.titulo + (n.hora ? ' (' + n.hora + ')' : '')),
+      ...notas.map(n => (n.repeticion ? '🔁 ' : '📝 ') + n.titulo + (n.hora ? ' (' + fmtHora(n.hora) + ')' : '')),
     ].filter(Boolean).join('\n');
     html += `
       <div class="day${otroMes ? ' other' : ''}${key === todayKey() ? ' today' : ''}${festivo ? ' holiday' : ''}${esSabado ? ' weekend' : ''}${esDomingo ? ' domingo' : ''}"
@@ -343,7 +365,7 @@ function notaCardHTML(n, { conFecha = true } = {}){
         <h4>${esc(n.titulo)}</h4>
         <span class="chip" style="--c:${colorCat}">${esc(nombreCat)}</span>
       </div>
-      <p class="note-meta">${conFecha ? '📅 ' + esc(fmtFechaLarga(proximaFecha(n))) : ''}${n.hora ? (conFecha ? ' · ⏰ ' : '⏰ ') + n.hora : ''}${n.repeticion ? ' · 🔁 ' + REP_CORTO[n.repeticion] : ''}</p>
+      <p class="note-meta">${conFecha ? '📅 ' + esc(fmtFechaLarga(proximaFecha(n))) : ''}${n.hora ? (conFecha ? ' · ⏰ ' : '⏰ ') + fmtHora(n.hora) : ''}${n.repeticion ? ' · 🔁 ' + REP_CORTO[n.repeticion] : ''}</p>
       ${n.desc ? `<p class="note-desc">${esc(n.desc)}</p>` : ''}
     </div>
     <div class="note-actions">
@@ -441,7 +463,7 @@ function abrirModalNota(nota = null, fechaPreset = null){
   $('#noteModalTitle').textContent = nota ? 'Editar nota' : 'Nueva nota';
   $('#noteTitle').value = nota?.titulo || '';
   $('#noteDate').value  = nota?.fecha || fechaPreset || todayKey();
-  $('#noteTime').value  = nota?.hora || '';
+  setHora12(nota?.hora || '');
   $('#noteDesc').value  = nota?.desc || '';
   $('#noteRep').value   = nota?.repeticion || '';
   llenarSelectCats($('#noteCat'), nota?.catId);
@@ -529,7 +551,7 @@ function guardarNota(e){
   const datos = {
     titulo: $('#noteTitle').value.trim(),
     fecha:  $('#noteDate').value,
-    hora:   $('#noteTime').value,
+    hora:   getHora12(),
     desc:   $('#noteDesc').value.trim(),
     catId:  $('#noteCat').value,
     color:  notePicker.get(),
@@ -724,6 +746,10 @@ function manejarAccion(e){
 function inicializar(){
   $('#calWeekdays').innerHTML = DIAS_CORTOS.map(d => `<span>${d}</span>`).join('');
   $('#themeSelect').innerHTML = TEMAS.map(t => `<option value="${t.id}">${t.nombre}</option>`).join('');
+  // selector de hora en formato 12 h
+  $('#noteHora').innerHTML = '<option value="">— sin hora</option>' +
+    Array.from({ length: 12 }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join('');
+  $('#noteMin').innerHTML  = Array.from({ length: 60 }, (_, i) => `<option value="${pad(i)}">${pad(i)}</option>`).join('');
 
   /* Navegación */
   $('#tabs').addEventListener('click', e => {
