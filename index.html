@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mi Calendario · Notas y festivos de Colombia</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📅</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body data-theme="claro">
+<div class="app">
+
+  <!-- ══════════ BARRA SUPERIOR ══════════ -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-icon">📅</span>
+      <div class="brand-text">
+        <strong>Mi Calendario</strong>
+        <small>Notas y festivos de Colombia</small>
+      </div>
+    </div>
+
+    <nav class="tabs" id="tabs">
+      <button class="tab active" data-view="calendario">🗓️ Calendario</button>
+      <button class="tab" data-view="notas">📝 Notas</button>
+      <button class="tab" data-view="usuarios">👤 Usuarios</button>
+    </nav>
+
+    <div class="topbar-right">
+      <label class="theme-pick" title="Tema de la interfaz">
+        <span class="theme-ico">🎨</span>
+        <select id="themeSelect"></select>
+      </label>
+      <button class="user-chip" id="userChip" title="Ir a usuarios">
+        <span class="chip-avatar" id="chipAvatar">🙂</span>
+        <span id="chipName">Usuario</span>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <!-- ══════════ VISTA: CALENDARIO ══════════ -->
+    <section class="view active" id="view-calendario">
+      <div class="cal-toolbar">
+        <div class="month-nav">
+          <button class="btn icon" id="prevMonth" title="Mes anterior">‹</button>
+          <h2 id="monthTitle">—</h2>
+          <button class="btn icon" id="nextMonth" title="Mes siguiente">›</button>
+        </div>
+        <div class="cal-actions">
+          <button class="btn" id="todayBtn">Hoy</button>
+          <button class="btn primary" id="newNoteCalBtn">＋ Nota</button>
+        </div>
+      </div>
+
+      <div class="cal-layout">
+        <aside class="sidebar" id="sidebar"></aside>
+        <div class="calendar">
+          <div class="cal-weekdays" id="calWeekdays"></div>
+          <div class="cal-grid" id="calGrid"></div>
+          <p class="legend">
+            <span class="lg lg-holiday"></span> Festivo de Colombia
+            <span class="lg lg-domingo"></span> Domingo (descanso)
+            <span class="lg lg-note"></span> Notas del día
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════ VISTA: NOTAS ══════════ -->
+    <section class="view" id="view-notas">
+      <div class="notes-toolbar">
+        <input type="search" id="noteSearch" class="input search" placeholder="🔍 Buscar notas...">
+        <div class="chip-filter-wrap" id="catChips"></div>
+        <select id="statusFilter" class="input" title="Estado">
+          <option value="todas">Todas</option>
+          <option value="pendientes">Pendientes</option>
+          <option value="hechas">Completadas</option>
+        </select>
+        <button class="btn primary" id="newNoteBtn">＋ Nueva nota</button>
+      </div>
+      <div id="notesList" class="notes-list"></div>
+    </section>
+
+    <!-- ══════════ VISTA: USUARIOS ══════════ -->
+    <section class="view" id="view-usuarios">
+      <div class="users-head">
+        <div>
+          <h2>Usuarios</h2>
+          <p class="hint">Cada usuario tiene sus propias notas, categorías y tema, de forma independiente.</p>
+        </div>
+        <button class="btn primary" id="newUserBtn">＋ Nuevo usuario</button>
+      </div>
+      <div class="user-cards" id="userCards"></div>
+
+      <h3 class="section-title">🎨 Apariencia <small>— tema del usuario actual</small></h3>
+      <div class="theme-cards" id="themeCards"></div>
+
+      <h3 class="section-title">💾 Datos</h3>
+      <div class="data-actions">
+        <button class="btn" id="exportBtn">⬇️ Exportar copia (JSON)</button>
+        <button class="btn" id="importBtn">⬆️ Importar copia</button>
+        <input type="file" id="importFile" accept=".json,application/json" hidden>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">Hecho con ❤️ · Festivos según la ley colombiana (Ley 51 de 1983)</footer>
+</div>
+
+<!-- ══════════ MODAL: NOTA / RECORDATORIO ══════════ -->
+<div class="modal-overlay" id="modal-note">
+  <div class="modal">
+    <h3 id="noteModalTitle">Nueva nota</h3>
+    <form id="noteForm">
+      <div class="field">
+        <label for="noteTitle">Título</label>
+        <input class="input" id="noteTitle" required maxlength="80" placeholder="Ej: Pago de servicios">
+      </div>
+      <div class="row-2">
+        <div class="field">
+          <label for="noteDate">Fecha</label>
+          <input class="input" type="date" id="noteDate" required>
+        </div>
+        <div class="field">
+          <label for="noteTime">Hora (opcional)</label>
+          <input class="input" type="time" id="noteTime">
+        </div>
+      </div>
+      <div class="field">
+        <label for="noteCat">Categoría</label>
+        <select class="input" id="noteCat"></select>
+      </div>
+      <div class="field">
+        <label>Color de la nota</label>
+        <div class="swatches" id="noteSwatches"></div>
+        <small class="hint-inline">El primer color usa el de la categoría automáticamente.</small>
+      </div>
+      <div class="field">
+        <label for="noteDesc">Descripción (opcional)</label>
+        <textarea class="input" id="noteDesc" rows="3" maxlength="500" placeholder="Detalles del recordatorio..."></textarea>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn" data-close>Cancelar</button>
+        <button type="submit" class="btn primary">Guardar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ══════════ MODAL: CATEGORÍA ══════════ -->
+<div class="modal-overlay" id="modal-cat">
+  <div class="modal modal-sm">
+    <h3 id="catModalTitle">Nueva categoría</h3>
+    <form id="catForm">
+      <div class="field">
+        <label for="catName">Nombre</label>
+        <input class="input" id="catName" required maxlength="30" placeholder="Ej: Estudios">
+      </div>
+      <div class="field">
+        <label>Color</label>
+        <div class="swatches" id="catSwatches"></div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn" data-close>Cancelar</button>
+        <button type="submit" class="btn primary">Guardar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ══════════ MODAL: USUARIO ══════════ -->
+<div class="modal-overlay" id="modal-user">
+  <div class="modal">
+    <h3 id="userModalTitle">Nuevo usuario</h3>
+    <form id="userForm">
+      <div class="field">
+        <label for="userName">Nombre</label>
+        <input class="input" id="userName" required maxlength="24" placeholder="Ej: Laura">
+      </div>
+      <div class="field">
+        <label>Avatar</label>
+        <div class="emoji-grid" id="emojiGrid"></div>
+      </div>
+      <div class="field">
+        <label>Color del avatar</label>
+        <div class="swatches" id="userSwatches"></div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn" data-close>Cancelar</button>
+        <button type="submit" class="btn primary">Guardar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ══════════ MODAL: DÍA ══════════ -->
+<div class="modal-overlay" id="modal-day">
+  <div class="modal modal-day">
+    <div class="day-modal-head">
+      <h3 id="dayModalTitle"></h3>
+      <button class="btn icon" data-close title="Cerrar">✕</button>
+    </div>
+    <div id="dayNotes" class="day-notes"></div>
+    <button class="btn primary block" id="dayAddNote">＋ Agregar nota este día</button>
+  </div>
+</div>
+
+<!-- ══════════ MODAL: CONFIRMAR ══════════ -->
+<div class="modal-overlay" id="modal-confirm">
+  <div class="modal modal-sm">
+    <h3 id="confirmTitle">Confirmar</h3>
+    <p class="confirm-msg" id="confirmText"></p>
+    <div class="modal-actions">
+      <button class="btn" data-close>Cancelar</button>
+      <button class="btn danger" id="confirmOk">Eliminar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

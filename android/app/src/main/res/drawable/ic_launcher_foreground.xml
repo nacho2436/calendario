@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- anillas del calendario -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M40,32h5v10h-5z M63,32h5v10h-5z" />
+    <!-- cuerpo -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M33,38h42a5,5 0 0 1 5,5v34a5,5 0 0 1 -5,5h-42a5,5 0 0 1 -5,-5v-34a5,5 0 0 1 5,-5z" />
+    <!-- banda superior -->
+    <path
+        android:fillColor="#FF3D55D8"
+        android:pathData="M28,43a5,5 0 0 1 5,-5h42a5,5 0 0 1 5,5v8h-52z" />
+    <!-- puntos de notas (fila 1) -->
+    <path
+        android:fillColor="#FFE5484D"
+        android:pathData="M40,58m-3.4,0a3.4,3.4 0 1 0 6.8,0a3.4,3.4 0 1 0 -6.8,0" />
+    <path
+        android:fillColor="#FFF5C542"
+        android:pathData="M54,58m-3.4,0a3.4,3.4 0 1 0 6.8,0a3.4,3.4 0 1 0 -6.8,0" />
+    <path
+        android:fillColor="#FF34A853"
+        android:pathData="M68,58m-3.4,0a3.4,3.4 0 1 0 6.8,0a3.4,3.4 0 1 0 -6.8,0" />
+    <!-- puntos de notas (fila 2) -->
+    <path
+        android:fillColor="#FF4F6DF5"
+        android:pathData="M40,70m-3.4,0a3.4,3.4 0 1 0 6.8,0a3.4,3.4 0 1 0 -6.8,0" />
+    <path
+        android:fillColor="#FF8E6DF5"
+        android:pathData="M54,70m-3.4,0a3.4,3.4 0 1 0 6.8,0a3.4,3.4 0 1 0 -6.8,0" />
+    <path
+        android:fillColor="#FFF2913D"
+        android:pathData="M68,70m-3.4,0a3.4,3.4 0 1 0 6.8,0a3.4,3.4 0 1 0 -6.8,0" />
+</vector>

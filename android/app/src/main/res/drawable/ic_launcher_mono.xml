@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- silueta monocromática para iconos temáticos (Android 13+) -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M40,32h5v10h-5z M63,32h5v10h-5z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M33,38h42a5,5 0 0 1 5,5v34a5,5 0 0 1 -5,5h-42a5,5 0 0 1 -5,-5v-34a5,5 0 0 1 5,-5z" />
+    <path
+        android:fillColor="#66000000"
+        android:pathData="M28,43a5,5 0 0 1 5,-5h42a5,5 0 0 1 5,5v8h-52z" />
+</vector>

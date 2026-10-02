@@ -1,0 +1,31 @@
+# ── Protección general (nunca subir) ─────────────────
+.env
+*.pem
+id_rsa*
+*.sqlite
+*.sqlite3
+local.properties
+fotos/
+*.apk
+*.aab
+*.jks
+*.keystore
+
+# ── Android / Gradle ─────────────────────────────────
+.gradle/
+build/
+app/build/
+android/app/build/
+captures/
+.externalNativeBuild/
+.cxx/
+*.iml
+.idea/
+.kotlin/
+
+# ── Sistema / editor ─────────────────────────────────
+.DS_Store
+Thumbs.db
+~$*
+node_modules/
+.zcode/
