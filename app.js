@@ -207,6 +207,84 @@ function proximaFecha(nota){
 }
 const notasQueOcurren = key => yo().notas.filter(n => ocurreEn(n, key));
 
+/* ─────────── Notificaciones antes de la nota ───────────
+   Cada nota puede tener varios avisos (minutos antes). Mientras la
+   página esté abierta se verifica cada 30 s y se lanza una
+   notificación del navegador + un aviso interno con sonido. */
+const AVISOS_DEF = [
+  { min: 5,    corto: '5 min',   label: '5 minutos antes' },
+  { min: 15,   corto: '15 min',  label: '15 minutos antes' },
+  { min: 30,   corto: '30 min',  label: '30 minutos antes' },
+  { min: 60,   corto: '1 hora',  label: '1 hora antes' },
+  { min: 120,  corto: '2 horas', label: '2 horas antes' },
+  { min: 1440, corto: '1 día',   label: '1 día antes' },
+];
+const avisoDef = min => AVISOS_DEF.find(a => a.min === min) || { min, corto: min + ' min', label: min + ' minutos antes' };
+
+function cargarAvisados(){
+  try{
+    const hoy = todayKey(), manana = keyOf(new Date(Date.now() + 864e5));
+    const vigentes = JSON.parse(localStorage.getItem('calendarioAvisos') || '[]')
+      .filter(k => k.includes(hoy) || k.includes(manana));
+    localStorage.setItem('calendarioAvisos', JSON.stringify(vigentes));
+    return new Set(vigentes);
+  } catch { return new Set(); }
+}
+const avisados = cargarAvisados();
+function persistirAvisados(){
+  try { localStorage.setItem('calendarioAvisos', JSON.stringify([...avisados])); } catch {}
+}
+
+function revisarAvisos(){
+  const ahora = new Date();
+  const fechas = [todayKey(), keyOf(new Date(Date.now() + 864e5))];   // hoy y mañana (para el aviso de "1 día antes")
+  for (const n of yo().notas){
+    if (!n.hora || !n.avisos?.length) continue;
+    for (const f of fechas){
+      if (!ocurreEn(n, f)) continue;
+      const [y, m, d]  = f.split('-').map(Number);
+      const [hh, mm]   = n.hora.split(':').map(Number);
+      const inicio     = new Date(y, m - 1, d, hh, mm);
+      for (const av of n.avisos){
+        const tAlerta = new Date(inicio.getTime() - av * 60000);
+        const clave = `${n.id}|${f}|${av}`;
+        if (avisados.has(clave)) continue;
+        if (ahora >= tAlerta && ahora - tAlerta < 90000){
+          avisados.add(clave);
+          persistirAvisados();
+          dispararAviso(n, av);
+        }
+      }
+    }
+  }
+}
+
+function dispararAviso(nota, av){
+  const def = avisoDef(av);
+  const texto = `⏰ ${nota.titulo} · ${def.label} (${fmtHora(nota.hora)})`;
+  toast(texto);
+  if ('Notification' in window && Notification.permission === 'granted'){
+    try{
+      new Notification(`⏰ ${nota.titulo}`, {
+        body: `${def.label} — comienza a las ${fmtHora(nota.hora)}`,
+        tag: `${nota.id}-${av}`,
+      });
+    } catch {}
+  }
+  try{
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator(), gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.frequency.value = 830; gain.gain.value = 0.14;
+    osc.start(); osc.stop(ctx.currentTime + 0.2);
+    setTimeout(() => ctx.close(), 500);
+  } catch {}
+}
+
+function avisosDe(nota){
+  return (nota.avisos || []).map(a => avisoDef(a).corto).join(', ');
+}
+
 /* Estado de la interfaz */
 const HOY = new Date();
 const ui = {
@@ -310,7 +388,7 @@ function renderGrid(){
     const extra  = notas.length > 3 ? `<span class="more">+${notas.length - 3} más</span>` : '';
     const tooltip = [
       festivo ? '🎉 Festivo: ' + festivo : '',
-      ...notas.map(n => (n.repeticion ? '🔁 ' : '📝 ') + n.titulo + (n.hora ? ' (' + fmtHora(n.hora) + ')' : '')),
+      ...notas.map(n => (n.repeticion ? '🔁 ' : '📝 ') + n.titulo + (n.hora ? ' (' + fmtHora(n.hora) + ')' : '') + (n.avisos?.length ? ' 🔔' : '')),
     ].filter(Boolean).join('\n');
     html += `
       <div class="day${otroMes ? ' other' : ''}${key === todayKey() ? ' today' : ''}${festivo ? ' holiday' : ''}${esSabado ? ' weekend' : ''}${esDomingo ? ' domingo' : ''}"
@@ -365,7 +443,7 @@ function notaCardHTML(n, { conFecha = true } = {}){
         <h4>${esc(n.titulo)}</h4>
         <span class="chip" style="--c:${colorCat}">${esc(nombreCat)}</span>
       </div>
-      <p class="note-meta">${conFecha ? '📅 ' + esc(fmtFechaLarga(proximaFecha(n))) : ''}${n.hora ? (conFecha ? ' · ⏰ ' : '⏰ ') + fmtHora(n.hora) : ''}${n.repeticion ? ' · 🔁 ' + REP_CORTO[n.repeticion] : ''}</p>
+      <p class="note-meta">${conFecha ? '📅 ' + esc(fmtFechaLarga(proximaFecha(n))) : ''}${n.hora ? (conFecha ? ' · ⏰ ' : '⏰ ') + fmtHora(n.hora) : ''}${n.repeticion ? ' · 🔁 ' + REP_CORTO[n.repeticion] : ''}${n.avisos?.length ? ' · 🔔 ' + esc(avisosDe(n)) + ' antes' : ''}</p>
       ${n.desc ? `<p class="note-desc">${esc(n.desc)}</p>` : ''}
     </div>
     <div class="note-actions">
@@ -466,11 +544,20 @@ function abrirModalNota(nota = null, fechaPreset = null){
   setHora12(nota?.hora || '');
   $('#noteDesc').value  = nota?.desc || '';
   $('#noteRep').value   = nota?.repeticion || '';
+  setAvisos(nota?.avisos || []);
   llenarSelectCats($('#noteCat'), nota?.catId);
   notePicker = construirSwatches($('#noteSwatches'), { auto: true, valor: nota?.color || '' });
   abrirModal('modal-note');
   setTimeout(() => $('#noteTitle').focus(), 80);
 }
+/* Selección múltiple de avisos en el formulario */
+function setAvisos(arr){
+  $$('#noteAvisos .aviso-chip').forEach(c => c.classList.toggle('selected', arr.includes(+c.dataset.min)));
+}
+function getAvisos(){
+  return $$('#noteAvisos .aviso-chip.selected').map(c => +c.dataset.min).sort((a, b) => a - b);
+}
+
 function llenarSelectCats(sel, selId){
   const cats = yo().categorias;
   sel.innerHTML =
@@ -556,6 +643,7 @@ function guardarNota(e){
     catId:  $('#noteCat').value,
     color:  notePicker.get(),
     repeticion: $('#noteRep').value,
+    avisos: getAvisos(),
   };
   if (!datos.titulo || !datos.fecha) return;
   if (esEdicion) Object.assign(editandoNota, datos);
@@ -565,6 +653,12 @@ function guardarNota(e){
   cerrarModal($('#modal-note'));
   toast(esEdicion ? 'Nota actualizada ✏️' : 'Nota creada 📝');
   refrescarTrasCambio();
+  // pedir permiso de notificaciones al guardar una nota con avisos
+  if (datos.avisos.length && 'Notification' in window && Notification.permission === 'default'){
+    Notification.requestPermission().then(p => {
+      if (p === 'granted') toast('Notificaciones del navegador activadas 🔔');
+    });
+  }
 }
 
 function guardarCategoria(e){
@@ -750,6 +844,13 @@ function inicializar(){
   $('#noteHora').innerHTML = '<option value="">— sin hora</option>' +
     Array.from({ length: 12 }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join('');
   $('#noteMin').innerHTML  = Array.from({ length: 60 }, (_, i) => `<option value="${pad(i)}">${pad(i)}</option>`).join('');
+  // chips de notificación (selección múltiple)
+  $('#noteAvisos').innerHTML = AVISOS_DEF.map(a =>
+    `<button type="button" class="aviso-chip" data-min="${a.min}" title="${a.label}">${a.corto}</button>`).join('');
+  $('#noteAvisos').addEventListener('click', e => {
+    const c = e.target.closest('.aviso-chip');
+    if (c) c.classList.toggle('selected');
+  });
 
   /* Navegación */
   $('#tabs').addEventListener('click', e => {
@@ -826,6 +927,10 @@ function inicializar(){
   aplicarTema();
   guardar();   // persiste también el estado inicial la primera vez
   render();
+
+  // verificador de notificaciones (mientras la página esté abierta)
+  setTimeout(revisarAvisos, 3000);
+  setInterval(revisarAvisos, 30000);
 }
 
 inicializar();

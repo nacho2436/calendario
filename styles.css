@@ -438,6 +438,19 @@ label{font-size:.8rem;font-weight:600;color:var(--text-soft);display:block;margi
 .swatch-input::-webkit-color-swatch-wrapper{padding:0;}
 .swatch-input::-webkit-color-swatch{border:none;border-radius:50%;}
 
+/* Chips de notificación (selección múltiple) */
+.avisos{display:flex;gap:6px;flex-wrap:wrap;}
+.aviso-chip{
+  border:1px solid var(--border);background:var(--surface);color:var(--text-soft);
+  border-radius:999px;padding:6px 13px;cursor:pointer;font:inherit;
+  font-size:.74rem;font-weight:700;
+}
+.aviso-chip:hover{border-color:var(--accent);color:var(--text);}
+.aviso-chip.selected{
+  background:color-mix(in srgb, var(--accent) 15%, var(--surface));
+  border-color:var(--accent);color:var(--accent);
+}
+
 /* Emojis avatar */
 .emoji-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;}
 .emoji{
