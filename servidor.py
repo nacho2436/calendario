@@ -38,6 +38,8 @@ def abrir_db():
         id TEXT PRIMARY KEY,
         actualizado INTEGER NOT NULL DEFAULT 0,
         datos TEXT NOT NULL)''')
+    con.execute('''CREATE TABLE IF NOT EXISTS eliminados (
+        id TEXT PRIMARY KEY, nombre TEXT NOT NULL, ts INTEGER NOT NULL)''')
     return con
 
 
@@ -85,7 +87,27 @@ def fusionar_usuario(a, b):
     return r
 
 
-def fusionar(entrantes):
+def _leer_bajas(con):
+    return [{'id': f[0], 'nombre': f[1], 'ts': f[2]}
+            for f in con.execute('SELECT id, nombre, ts FROM eliminados')]
+
+
+def _aplicar_bajas(usuarios, bajas):
+    """Quita los usuarios eliminados: una baja gana si es más reciente
+    que la última modificación del usuario (por id o por nombre)."""
+    vivos = []
+    for u in usuarios:
+        nn = _norm(u.get('nombre'))
+        eliminado = any(
+            (b['id'] == u.get('id') or _norm(b.get('nombre')) == nn)
+            and b['ts'] > int(u.get('actualizado') or 0)
+            for b in bajas)
+        if not eliminado:
+            vivos.append(u)
+    return vivos
+
+
+def fusionar(entrantes, bajas_entrantes=None):
     """Aplica los usuarios recibidos y devuelve la lista final consolidada:
     - Los usuarios se emparejan por id o por nombre (mismo usuario con ids
       distintos en cada dispositivo) y se fusionan sus notas y categorías.
@@ -118,14 +140,29 @@ def fusionar(entrantes):
                     consolidados.pop(nn_viejo, None)
                     consolidados[_norm(f.get('nombre'))] = f
                     por_id[previo['id']] = f
-            # 3. reemplazar la tabla (elimina los ids duplicados antiguos)
-            finales = list(consolidados.values())
+            # 3. registrar bajas (eliminaciones) y aplicarlas
+            for b in bajas_entrantes or []:
+                if not b.get('id'):
+                    continue
+                previo = con.execute('SELECT ts FROM eliminados WHERE id=?', (b['id'],)).fetchone()
+                ts = int(b.get('ts') or 0)
+                if previo is None:
+                    con.execute('INSERT INTO eliminados(id, nombre, ts) VALUES(?,?,?)',
+                                (b['id'], b.get('nombre') or '', ts))
+                elif ts > previo[0]:
+                    con.execute('UPDATE eliminados SET nombre=?, ts=? WHERE id=?',
+                                (b.get('nombre') or '', ts, b['id']))
+            bajas = _leer_bajas(con)
+            finales = _aplicar_bajas(list(consolidados.values()), bajas)
+            limite = int(time.time() * 1000) - 90 * 24 * 3600 * 1000
+            con.execute('DELETE FROM eliminados WHERE ts < ?', (limite,))
+            # 4. reemplazar la tabla (elimina los ids duplicados antiguos)
             con.execute('DELETE FROM usuarios')
             for u in finales:
                 con.execute('INSERT INTO usuarios(id, actualizado, datos) VALUES(?,?,?)',
                             (u['id'], int(u.get('actualizado') or 0),
                              json.dumps(u, ensure_ascii=False)))
-            return finales
+            return finales, _leer_bajas(con)
 
 
 class Manejador(BaseHTTPRequestHandler):
@@ -151,7 +188,12 @@ class Manejador(BaseHTTPRequestHandler):
         if ruta == '/api/ping':
             return self.json_({'ok': True, 'hora': int(time.time() * 1000)})
         if ruta == '/api/estado':
-            return self.json_({'users': leer_usuarios()})
+            with CANDADO:
+                with abrir_db() as con:
+                    bajas = _leer_bajas(con)
+                    guardados = [json.loads(f[0]) for f in con.execute('SELECT datos FROM usuarios')]
+                    usuarios = _aplicar_bajas(guardados, bajas)
+            return self.json_({'users': usuarios, 'eliminados': bajas})
         if ruta.startswith('/api/'):
             return self.json_({'error': 'ruta desconocida'}, 404)
         if ruta in ESTATICOS:
@@ -171,8 +213,10 @@ class Manejador(BaseHTTPRequestHandler):
             largo = int(self.headers.get('Content-Length') or 0)
             cuerpo = json.loads(self.rfile.read(largo) or b'{}')
             entrantes = cuerpo.get('users') or []
-            finales = fusionar(entrantes)
-            return self.json_({'users': finales, 'servidorHora': int(time.time() * 1000)})
+            bajas = cuerpo.get('eliminados') or []
+            finales, todas_bajas = fusionar(entrantes, bajas)
+            return self.json_({'users': finales, 'eliminados': todas_bajas,
+                               'servidorHora': int(time.time() * 1000)})
         except Exception as e:
             return self.json_({'error': str(e)}, 400)
 

@@ -20,7 +20,7 @@ if ss -ltn 2>/dev/null | grep -q ":8177 "; then
     sleep 1
 fi
 
-nohup python3 servidor.py >> datos/servidor.log 2>&1 &
+setsid nohup python3 servidor.py >> datos/servidor.log 2>&1 < /dev/null &
 echo $! > .servidor.pid
 sleep 1.5
 

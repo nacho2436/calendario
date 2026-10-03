@@ -38,7 +38,14 @@ data class Usuario(
     val actualizado: Long = 0L,   // marca de sincronización (el más nuevo gana)
 )
 
-data class AppState(val version: Int = 1, val currentUserId: String, val users: List<Usuario>)
+data class BajaUsuario(val id: String, val nombre: String, val ts: Long)
+
+data class AppState(
+    val version: Int = 1,
+    val currentUserId: String,
+    val users: List<Usuario>,
+    val eliminados: List<BajaUsuario> = emptyList(),
+)
 
 /* ─────────── Repeticiones ─────────── */
 
@@ -211,9 +218,11 @@ object Store {
 
     fun borrarUsuario(id: String) {
         if (app.users.size <= 1) return
+        val u = app.users.firstOrNull { it.id == id } ?: return
         val users = app.users.filter { it.id != id }
         val actual = if (app.currentUserId == id) users.first().id else app.currentUserId
-        app = AppState(app.version, actual, users)
+        val baja = BajaUsuario(id, u.nombre, System.currentTimeMillis())
+        app = AppState(app.version, actual, users, app.eliminados + baja)
         guardar()
     }
 
@@ -258,8 +267,10 @@ object Store {
 
     /* ─────────── sincronización con el servidor web ─────────── */
 
-    fun exportarUsuariosJson(): String =
-        JSONObject().put("users", JSONArray(app.users.map { usuarioAJson(it) })).toString()
+    fun exportarUsuariosJson(): String = JSONObject().apply {
+        put("users", JSONArray(app.users.map { usuarioAJson(it) }))
+        put("eliminados", JSONArray(app.eliminados.map { bajaAJson(it) }))
+    }.toString()
 
     private fun normTxt(s: String?): String =
         (s ?: "").lowercase().split(Regex("\\s+")).filter { it.isNotEmpty() }.joinToString(" ")
@@ -299,11 +310,29 @@ object Store {
     /** Fusiona los usuarios del servidor emparejando por id o por nombre
      *  (mismo usuario con ids distintos en cada dispositivo). Devuelve cambios. */
     fun importarYFusionar(texto: String): Int {
-        val lista = JSONObject(texto).optJSONArray("users") ?: return 0
+        val raiz = JSONObject(texto)
+        val lista = raiz.optJSONArray("users") ?: return 0
         val entrantes = (0 until lista.length()).map { usuarioDeJson(lista.getJSONObject(it)) }
+        // 1. fusionar bajas locales y del servidor
+        val bajasEntrantes = raiz.optJSONArray("eliminados")?.let { ja ->
+            (0 until ja.length()).map { bajaDeJson(ja.getJSONObject(it)) }
+        } ?: emptyList()
+        val mapaBajas = HashMap<String, BajaUsuario>()
+        (app.eliminados + bajasEntrantes).forEach { b ->
+            val k = b.id + "|" + normTxt(b.nombre)
+            val prev = mapaBajas[k]
+            if (prev == null || b.ts > prev.ts) mapaBajas[k] = b
+        }
+        val limite = System.currentTimeMillis() - 90L * 24 * 3600 * 1000
+        val bajas = mapaBajas.values.filter { it.ts > limite }
+        val eliminado = { u: Usuario ->
+            bajas.any { b -> (b.id == u.id || normTxt(b.nombre) == normTxt(u.nombre)) && b.ts > u.actualizado }
+        }
+        // 2. fusionar usuarios (los eliminados no vuelven)
         var cambios = 0
-        val fusionados = app.users.toMutableList()
+        val fusionados = app.users.filter { !eliminado(it) }.toMutableList()
         for (r in entrantes){
+            if (eliminado(r)) continue
             var i = fusionados.indexOfFirst { it.id == r.id }
             if (i < 0) i = fusionados.indexOfFirst { normTxt(it.nombre) == normTxt(r.nombre) }
             if (i < 0){
@@ -314,7 +343,7 @@ object Store {
                 fusionados[i] = f
             }
         }
-        var nuevo = app.copy(users = fusionados)
+        var nuevo = app.copy(users = fusionados, eliminados = bajas)
         if (!fusionados.any { it.id == nuevo.currentUserId }){
             nuevo = nuevo.copy(currentUserId = fusionados.firstOrNull()?.id ?: nuevo.currentUserId)
         }
@@ -360,15 +389,23 @@ object Store {
         notas = o.optJSONArray("notas")?.let { ja -> (0 until ja.length()).map { notaDeJson(ja.getJSONObject(it)) } } ?: emptyList(),
     )
 
+    private fun bajaAJson(b: BajaUsuario) = JSONObject().apply {
+        put("id", b.id); put("nombre", b.nombre); put("ts", b.ts)
+    }
+    private fun bajaDeJson(o: JSONObject) =
+        BajaUsuario(o.optString("id"), o.optString("nombre"), o.optLong("ts", 0L))
+
     private fun aJson(s: AppState): String = JSONObject().apply {
         put("version", s.version); put("currentUserId", s.currentUserId)
         put("users", JSONArray(s.users.map { usuarioAJson(it) }))
+        put("eliminados", JSONArray(s.eliminados.map { bajaAJson(it) }))
     }.toString()
 
     private fun deJson(txt: String): AppState {
         val o = JSONObject(txt)
         val users = o.optJSONArray("users")?.let { ja -> (0 until ja.length()).map { usuarioDeJson(ja.getJSONObject(it)) } } ?: emptyList()
-        return AppState(o.optInt("version", 1), o.optString("currentUserId", ""), users)
+        val eliminados = o.optJSONArray("eliminados")?.let { ja -> (0 until ja.length()).map { bajaDeJson(ja.getJSONObject(it)) } } ?: emptyList()
+        return AppState(o.optInt("version", 1), o.optString("currentUserId", ""), users, eliminados)
     }
 }
 

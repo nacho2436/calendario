@@ -1186,7 +1186,6 @@ fun SeccionSincronizacion() {
                 onClick = {
                     val destino = url.trim().trimEnd('/').removeSuffix("/api/sync")
                     if (destino.isEmpty()){ estado = "Escribe la dirección del servidor"; return@Button }
-                    prefs.edit().putString("servidor", destino).apply()
                     ocupado = true; estado = "Sincronizando…"
                     alcance.launch {
                         try {
@@ -1194,9 +1193,12 @@ fun SeccionSincronizacion() {
                                 Sincronizacion.httpPost("$destino/api/sync", Store.exportarUsuariosJson())
                             }
                             val cambios = Store.importarYFusionar(respuesta)
-                            estado = if (cambios > 0) "✔ Sincronizado ($cambios cambio/s del servidor)" else "✔ Sincronizado (sin cambios)"
+                            // la dirección se guarda solo si la conexión funcionó
+                            prefs.edit().putString("servidor", destino).apply()
+                            estado = if (cambios > 0) "✔ Sincronizado ($cambios cambio/s) · dirección guardada"
+                                     else "✔ Sincronizado (sin cambios) · dirección guardada"
                         } catch (e: Exception) {
-                            estado = "✘ No se pudo conectar: ${e.message ?: "error"}"
+                            estado = "✘ No se pudo conectar: ${e.message ?: "error"} (la dirección no se guardó)"
                         }
                         ocupado = false
                     }

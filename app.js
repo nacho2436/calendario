@@ -145,7 +145,7 @@ function nuevoUsuario(nombre){
 }
 function estadoInicial(){
   const u = nuevoUsuario('Usuario 1');
-  return { version: 1, currentUserId: u.id, users: [u] };
+  return { version: 1, currentUserId: u.id, users: [u], eliminados: [] };
 }
 function cargar(){
   try{
@@ -153,6 +153,7 @@ function cargar(){
     if (!raw) return null;
     const data = JSON.parse(raw);
     if (!data || !Array.isArray(data.users) || !data.users.length) return null;
+    if (!Array.isArray(data.eliminados)) data.eliminados = [];
     if (!data.users.find(u => u.id === data.currentUserId)) data.currentUserId = data.users[0].id;
     return data;
   } catch { return null; }
@@ -166,6 +167,7 @@ function guardar(sinBump = false){
   if (modoServidor) programarPushServidor();
 }
 
+const HABIA_ESTADO_LOCAL = !!cargar();
 let state = cargar() || estadoInicial();
 const yo  = () => state.users.find(u => u.id === state.currentUserId);
 
@@ -203,6 +205,23 @@ function fusionarUsuario(a, b){
     categorias: [...categorias.values()],
     notas: [...notas.values()],
     actualizado: Math.max(a.actualizado || 0, b.actualizado || 0) };
+}
+
+function fusionarBajas(locales, remotas){
+  const mapa = new Map();
+  for (const b of [...(locales || []), ...(remotas || [])]){
+    const k = (b.id || '') + '|' + normTxt(b.nombre);
+    const prev = mapa.get(k);
+    if (!prev || (b.ts || 0) > (prev.ts || 0)) mapa.set(k, b);
+  }
+  const limite = Date.now() - 90 * 24 * 3600 * 1000;   // bajas de más de 90 días se olvidan
+  return [...mapa.values()].filter(b => (b.ts || 0) > limite);
+}
+function aplicarBajas(users, bajas){
+  if (!bajas?.length) return users;
+  return users.filter(u => !bajas.some(b =>
+    ((b.id && b.id === u.id) || normTxt(b.nombre) === normTxt(u.nombre)) &&
+    (b.ts || 0) > (u.actualizado || 0)));
 }
 
 function fusionarEstados(local, remotos){
@@ -244,7 +263,17 @@ async function conectarServidor(){
     clearTimeout(t);
     if (!resp.ok) return;
     const remoto = await resp.json();
-    state = fusionarEstados(state, remoto.users);
+    const bajas = fusionarBajas(state.eliminados, remoto.eliminados);
+    if (!HABIA_ESTADO_LOCAL && (remoto.users || []).length){
+      // primera vez con servidor: adoptar sus usuarios en vez de sembrar "Usuario 1"
+      state = { ...state, users: aplicarBajas(remoto.users, bajas), eliminados: bajas,
+                currentUserId: remoto.users[0].id };
+    } else {
+      state = fusionarEstados(state, remoto.users);
+      state.eliminados = bajas;
+      state.users = aplicarBajas(state.users, bajas);
+      if (!state.users.some(u => u.id === state.currentUserId)) state.currentUserId = state.users[0].id;
+    }
     guardar(true);
     modoServidor = true;
   } catch { modoServidor = false; }   // sin servidor (archivo local): modo localStorage
@@ -254,7 +283,7 @@ function programarPushServidor(){
   clearTimeout(timerPush);
   timerPush = setTimeout(() => {
     timerPush = null;
-    const cuerpo = JSON.stringify({ users: [yo()] });
+    const cuerpo = JSON.stringify({ users: state.users, eliminados: state.eliminados || [] });
     fetch('/api/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: cuerpo })
       .catch(() => {});
   }, 600);
@@ -266,9 +295,12 @@ async function sincronizarDesdeServidor(){
     const resp = await fetch('/api/estado', { cache: 'no-store' });
     if (!resp.ok) return;
     const remoto = await resp.json();
-    const huella = s => s.users.map(u => u.id + ':' + (u.actualizado || 0)).join('|');
+    const huella = s => s.users.map(u => u.id + ':' + (u.actualizado || 0)).join('|') + '#' + (s.eliminados || []).map(b => b.ts).join(',');
     const antes = huella(state);
     state = fusionarEstados(state, remoto.users);
+    state.eliminados = fusionarBajas(state.eliminados, remoto.eliminados);
+    state.users = aplicarBajas(state.users, state.eliminados);
+    if (!state.users.some(u => u.id === state.currentUserId)) state.currentUserId = state.users[0].id;
     if (huella(state) !== antes){
       try { localStorage.setItem(STORE, JSON.stringify(state)); } catch {}
       render();
@@ -1059,6 +1091,8 @@ function eliminarUsuario(id){
   confirmar(
     `¿Eliminar el usuario "${u.nombre}" junto con sus ${u.notas.length} nota(s) y ${u.categorias.length} categoría(s)? Esta acción no se puede deshacer.`,
     () => {
+      state.eliminados = state.eliminados || [];
+      state.eliminados.push({ id: u.id, nombre: u.nombre, ts: Date.now() });
       state.users = state.users.filter(x => x.id !== id);
       if (state.currentUserId === id){
         state.currentUserId = state.users[0].id;
