@@ -10,8 +10,21 @@ AMARILLO='\033[1;33m'; AZUL='\033[1;34m'; NORMAL='\033[0m'
 
 puerto_ocupado()  { ss -ltn 2>/dev/null | grep -q ":8177 "; }
 servidor_arriba() { curl -s -o /dev/null --max-time 2 http://localhost:8177/api/ping; }
-ip_lan()          { hostname -I 2>/dev/null | awk '{print $1}'; }
+ip_lan() {
+  hostname -I 2>/dev/null | tr ' ' '\n' | grep -E '^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.)' | head -1
+}
 leer_pid()        { [ -f .servidor.pid ] && cat .servidor.pid 2>/dev/null; }
+
+mostrar_enlaces() {
+  local ip
+  ip=$(ip_lan)
+  echo -e "   ${AZUL}PC     →${NORMAL} http://localhost:8177"
+  if [ -n "$ip" ]; then
+    echo -e "   ${AZUL}Celular →${NORMAL} http://$ip:8177   ${AMARILLO}(misma red WiFi)${NORMAL}"
+  else
+    echo -e "   ${AMARILLO}(no se detectó IP de red)${NORMAL}"
+  fi
+}
 
 estado() {
   if servidor_arriba; then
@@ -23,7 +36,8 @@ estado() {
 
 arrancar() {
   if servidor_arriba; then
-    echo -e "${AMARILLO}El servidor ya está corriendo.${NORMAL}"
+    echo -e "${AMARILLO}El servidor ya está corriendo:${NORMAL}"
+    mostrar_enlaces
     return
   fi
   if puerto_ocupado; then
@@ -38,8 +52,7 @@ arrancar() {
   sleep 1.5
   if servidor_arriba; then
     echo -e "${VERDE}✔ Servidor iniciado${NORMAL}"
-    echo -e "   En el PC     : ${AZUL}http://localhost:8177${NORMAL}"
-    echo -e "   En el celular: ${AZUL}http://$(ip_lan):8177${NORMAL}  (misma red WiFi)"
+    mostrar_enlaces
   else
     echo -e "${ROJO}✘ No pudo arrancar. Revisa datos/servidor.log${NORMAL}"
     rm -f .servidor.pid
@@ -76,6 +89,9 @@ info() {
     echo -e "${AMARILLO}El servidor está detenido; arráncalo para ver la información.${NORMAL}"
     return
   fi
+  echo -e "${AZUL}── Direcciones para compartir ──${NORMAL}"
+  mostrar_enlaces
+  echo
   echo -e "${AZUL}── Datos guardados en el servidor ──${NORMAL}"
   curl -s --max-time 3 http://localhost:8177/api/estado | python3 -c '
 import json, sys
@@ -99,6 +115,9 @@ while true; do
   echo -e "${BLANCO}        📅  Mi Calendario · Servidor${NORMAL}"
   echo -e "${BLANCO}══════════════════════════════════════════════${NORMAL}"
   echo -e "  Estado: $(estado)"
+  if servidor_arriba; then
+    mostrar_enlaces
+  fi
   echo
   echo -e "   ${AZUL}1)${NORMAL} ▶  Arrancar el servidor"
   echo -e "   ${AZUL}2)${NORMAL} ■  Detener el servidor"
