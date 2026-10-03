@@ -176,13 +176,62 @@ const yo  = () => state.users.find(u => u.id === state.currentUserId);
 let modoServidor = false;
 let timerPush = null, timerPull = null;
 
-function fusionarEstados(local, remotos){
-  const porId = new Map(local.users.map(u => [u.id, u]));
-  for (const r of remotos || []){
-    const l = porId.get(r.id);
-    if (!l || (r.actualizado || 0) > (l.actualizado || 0)) porId.set(r.id, r);
+const normTxt = s => String(s || '').toLowerCase().split(/\s+/).filter(Boolean).join(' ');
+
+/** Fusiona dos documentos del mismo usuario: perfil del más reciente,
+    notas y categorías de ambos combinadas sin duplicar. */
+function fusionarUsuario(a, b){
+  const base = (a.actualizado || 0) >= (b.actualizado || 0) ? a : b;
+  const otro = base === a ? b : a;
+  const categorias = new Map((base.categorias || []).map(c => [c.id, c]));
+  const porNombre = new Map([...categorias.values()].map(c => [normTxt(c.nombre), c]));
+  const mapa = {};
+  for (const c of otro.categorias || []){
+    const nn = normTxt(c.nombre);
+    if (porNombre.has(nn)) mapa[c.id] = porNombre.get(nn).id;
+    else { categorias.set(c.id, c); porNombre.set(nn, c); }
   }
-  const users = [...porId.values()];
+  const notas = new Map((base.notas || []).map(n => [n.id, n]));
+  const usados = new Set([...notas.values()].map(n => normTxt(n.titulo) + '|' + n.fecha));
+  for (const n of otro.notas || []){
+    const clave = normTxt(n.titulo) + '|' + n.fecha;
+    if (notas.has(n.id) || usados.has(clave)) continue;
+    notas.set(n.id, { ...n, catId: mapa[n.catId] || n.catId });
+    usados.add(clave);
+  }
+  return { ...base,
+    categorias: [...categorias.values()],
+    notas: [...notas.values()],
+    actualizado: Math.max(a.actualizado || 0, b.actualizado || 0) };
+}
+
+function fusionarEstados(local, remotos){
+  // consolidar la lista local (mismo nombre = mismo usuario, ids distintos)
+  const users = [];
+  const porNombreLocal = new Map();
+  for (const u of local.users){
+    const nn = normTxt(u.nombre);
+    const previo = porNombreLocal.get(nn);
+    if (!previo){ users.push(u); porNombreLocal.set(nn, u); }
+    else { const f = fusionarUsuario(previo, u); f.id = previo.id; Object.assign(previo, f); }
+  }
+  const porId = new Map(users.map(u => [u.id, u]));
+  const porNombre = new Map(users.map(u => [normTxt(u.nombre), u]));
+  const tope = Date.now() + 60000;
+  for (let r of remotos || []){
+    if (!r.id) continue;
+    if ((r.actualizado || 0) > tope) r = { ...r, actualizado: tope };   // reloj desviado
+    const l = porId.get(r.id) || porNombre.get(normTxt(r.nombre));
+    if (!l){
+      users.push(r); porId.set(r.id, r); porNombre.set(normTxt(r.nombre), r);
+    } else {
+      const f = fusionarUsuario(l, r);
+      f.id = l.id;   // conserva el id local
+      porNombre.delete(normTxt(l.nombre));
+      Object.assign(l, f);
+      porId.set(l.id, l); porNombre.set(normTxt(l.nombre), l);
+    }
+  }
   const actual = users.some(u => u.id === local.currentUserId) ? local.currentUserId : users[0].id;
   return { ...local, users, currentUserId: actual };
 }
@@ -204,6 +253,7 @@ async function conectarServidor(){
 function programarPushServidor(){
   clearTimeout(timerPush);
   timerPush = setTimeout(() => {
+    timerPush = null;
     const cuerpo = JSON.stringify({ users: [yo()] });
     fetch('/api/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: cuerpo })
       .catch(() => {});
@@ -211,7 +261,7 @@ function programarPushServidor(){
 }
 
 async function sincronizarDesdeServidor(){
-  if (!modoServidor) return;
+  if (!modoServidor || timerPush) return;   // envío pendiente: esperar al próximo ciclo
   try{
     const resp = await fetch('/api/estado', { cache: 'no-store' });
     if (!resp.ok) return;

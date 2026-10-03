@@ -261,17 +261,57 @@ object Store {
     fun exportarUsuariosJson(): String =
         JSONObject().put("users", JSONArray(app.users.map { usuarioAJson(it) })).toString()
 
-    /** Fusiona los usuarios del servidor (el más nuevo gana). Devuelve cambios aplicados. */
+    private fun normTxt(s: String?): String =
+        (s ?: "").lowercase().split(Regex("\\s+")).filter { it.isNotEmpty() }.joinToString(" ")
+
+    /** Fusiona dos documentos del mismo usuario: perfil del más reciente,
+     *  notas y categorías de ambos combinadas sin duplicar (notas por id y
+     *  por título+fecha; categorías por nombre, remapeando referencias). */
+    private fun fusionarUsuario(a: Usuario, b: Usuario): Usuario {
+        val base = if (a.actualizado >= b.actualizado) a else b
+        val otro = if (base === a) b else a
+        val categorias = LinkedHashMap(base.categorias.associateBy { it.id })
+        val porNombre = HashMap<String, Categoria>()
+        categorias.values.forEach { porNombre[normTxt(it.nombre)] = it }
+        val mapa = HashMap<String, String>()
+        for (c in otro.categorias){
+            val nn = normTxt(c.nombre)
+            val existente = porNombre[nn]
+            if (existente != null) mapa[c.id] = existente.id
+            else { categorias[c.id] = c; porNombre[nn] = c }
+        }
+        val notas = LinkedHashMap(base.notas.associateBy { it.id })
+        val usados = HashSet<String>()
+        notas.values.forEach { usados.add(normTxt(it.titulo) + "|" + it.fecha) }
+        for (n in otro.notas){
+            val clave = normTxt(n.titulo) + "|" + n.fecha
+            if (notas.containsKey(n.id) || clave in usados) continue
+            val m = n.copy(catId = mapa[n.catId] ?: n.catId)
+            notas[m.id] = m
+            usados.add(clave)
+        }
+        return base.copy(
+            categorias = categorias.values.toList(),
+            notas = notas.values.toList(),
+            actualizado = maxOf(a.actualizado, b.actualizado))
+    }
+
+    /** Fusiona los usuarios del servidor emparejando por id o por nombre
+     *  (mismo usuario con ids distintos en cada dispositivo). Devuelve cambios. */
     fun importarYFusionar(texto: String): Int {
         val lista = JSONObject(texto).optJSONArray("users") ?: return 0
         val entrantes = (0 until lista.length()).map { usuarioDeJson(lista.getJSONObject(it)) }
         var cambios = 0
         val fusionados = app.users.toMutableList()
         for (r in entrantes){
-            val i = fusionados.indexOfFirst { it.id == r.id }
-            when {
-                i < 0 -> { fusionados.add(r); cambios++ }
-                r.actualizado > fusionados[i].actualizado -> { fusionados[i] = r; cambios++ }
+            var i = fusionados.indexOfFirst { it.id == r.id }
+            if (i < 0) i = fusionados.indexOfFirst { normTxt(it.nombre) == normTxt(r.nombre) }
+            if (i < 0){
+                fusionados.add(r); cambios++
+            } else {
+                val f = fusionarUsuario(fusionados[i], r).copy(id = fusionados[i].id)
+                if (f != fusionados[i]) cambios++
+                fusionados[i] = f
             }
         }
         var nuevo = app.copy(users = fusionados)

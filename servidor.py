@@ -48,30 +48,84 @@ def leer_usuarios():
     return [json.loads(f[0]) for f in filas]
 
 
+def _norm(s):
+    return ' '.join((s or '').lower().split())
+
+
+def fusionar_usuario(a, b):
+    """Fusiona dos documentos del MISMO usuario: el perfil viene del más
+    reciente, pero las notas y categorías de ambos se combinan sin
+    duplicar (notas: por id y por título+fecha; categorías: por nombre,
+    remapeando sus referencias)."""
+    base, otro = (a, b) if a.get('actualizado', 0) >= b.get('actualizado', 0) else (b, a)
+    categorias = {c['id']: c for c in base.get('categorias', [])}
+    por_nombre = {_norm(c.get('nombre')): c for c in categorias.values()}
+    mapa = {}
+    for c in otro.get('categorias', []):
+        nn = _norm(c.get('nombre'))
+        if nn in por_nombre:
+            mapa[c['id']] = por_nombre[nn]['id']
+        else:
+            categorias[c['id']] = c
+            por_nombre[nn] = c
+    notas = {n['id']: n for n in base.get('notas', [])}
+    usados = {_norm(n.get('titulo')) + '|' + n.get('fecha', '') for n in notas.values()}
+    for n in otro.get('notas', []):
+        clave = _norm(n.get('titulo')) + '|' + n.get('fecha', '')
+        if n['id'] in notas or clave in usados:
+            continue
+        m = dict(n)
+        m['catId'] = mapa.get(m.get('catId'), m.get('catId'))
+        notas[m['id']] = m
+        usados.add(clave)
+    r = dict(base)
+    r['categorias'] = list(categorias.values())
+    r['notas'] = list(notas.values())
+    r['actualizado'] = max(a.get('actualizado', 0), b.get('actualizado', 0))
+    return r
+
+
 def fusionar(entrantes):
-    """Aplica los usuarios recibidos con la política "el más nuevo gana"
-    (comparando la marca actualizado) y devuelve la lista final."""
+    """Aplica los usuarios recibidos y devuelve la lista final consolidada:
+    - Los usuarios se emparejan por id o por nombre (mismo usuario con ids
+      distintos en cada dispositivo) y se fusionan sus notas y categorías.
+    - Los duplicados ya guardados con el mismo nombre también se consolidan.
+    - Solo se crea un usuario si no existe ninguno con ese id o nombre."""
     with CANDADO:
         with abrir_db() as con:
-            actuales = {}
+            # 1. consolidar lo guardado (mismo nombre = mismo usuario)
+            consolidados = {}   # nombre normalizado -> usuario
             for (datos,) in con.execute('SELECT datos FROM usuarios'):
                 u = json.loads(datos)
-                actuales[u.get('id')] = u
+                nn = _norm(u.get('nombre'))
+                previo = consolidados.get(nn)
+                consolidados[nn] = u if previo is None else fusionar_usuario(previo, u)
+            # 2. aplicar los usuarios entrantes
+            por_id = {u.get('id'): u for u in consolidados.values()}
             for u in entrantes:
                 uid = u.get('id')
                 if not uid:
                     continue
                 u['actualizado'] = int(u.get('actualizado') or 0)
-                previo = actuales.get(uid)
-                if previo is None or u['actualizado'] >= int(previo.get('actualizado') or 0):
-                    actuales[uid] = u
-            for uid, u in actuales.items():
-                con.execute(
-                    '''INSERT INTO usuarios(id, actualizado, datos) VALUES(?,?,?)
-                       ON CONFLICT(id) DO UPDATE SET
-                         actualizado=excluded.actualizado, datos=excluded.datos''',
-                    (uid, int(u.get('actualizado') or 0), json.dumps(u, ensure_ascii=False)))
-            return list(actuales.values())
+                previo = por_id.get(uid) or consolidados.get(_norm(u.get('nombre')))
+                if previo is None:
+                    consolidados[_norm(u.get('nombre'))] = u
+                    por_id[uid] = u
+                else:
+                    nn_viejo = _norm(previo.get('nombre'))
+                    f = fusionar_usuario(previo, u)
+                    f['id'] = previo['id']          # conserva el id existente
+                    consolidados.pop(nn_viejo, None)
+                    consolidados[_norm(f.get('nombre'))] = f
+                    por_id[previo['id']] = f
+            # 3. reemplazar la tabla (elimina los ids duplicados antiguos)
+            finales = list(consolidados.values())
+            con.execute('DELETE FROM usuarios')
+            for u in finales:
+                con.execute('INSERT INTO usuarios(id, actualizado, datos) VALUES(?,?,?)',
+                            (u['id'], int(u.get('actualizado') or 0),
+                             json.dumps(u, ensure_ascii=False)))
+            return finales
 
 
 class Manejador(BaseHTTPRequestHandler):
