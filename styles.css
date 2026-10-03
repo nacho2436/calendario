@@ -253,7 +253,7 @@ label{font-size:.8rem;font-weight:600;color:var(--text-soft);display:block;margi
 }
 .cal-weekdays span:nth-child(7){color:var(--holiday);}   /* Dom */
 /* Alturas fijas por vista: las notas siempre caben dentro del cuadro */
-.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;grid-auto-rows:120px;}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;grid-auto-rows:136px;}
 .cal-grid.semana{grid-auto-rows:minmax(300px,1fr);}
 
 .day{
@@ -288,7 +288,7 @@ label{font-size:.8rem;font-weight:600;color:var(--text-soft);display:block;margi
 .day-notes{margin-top:auto;display:flex;flex-direction:column;justify-content:flex-end;gap:2px;min-height:0;overflow:hidden;flex-shrink:1;}
 /* Vista semanal: una fila de 7 celdas altas que llena el alto disponible */
 .cal-grid.semana{flex:1;grid-auto-rows:minmax(230px,1fr);}
-.cal-grid.semana .day-note{font-size:.68rem;}
+.cal-grid.semana .day-note{font-size:.78rem;line-height:1.35;}
 .cal-grid.semana .day-label{font-size:.62rem;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
 
 /* Vista "Hoy": agenda del día */
@@ -302,13 +302,13 @@ label{font-size:.8rem;font-weight:600;color:var(--text-soft);display:block;margi
 .vista-dia .empty{padding:34px 20px;}
 .day-note{
   display:flex;align-items:center;gap:4px;min-width:0;
-  font-size:.6rem;font-weight:600;line-height:1.25;color:var(--text-soft);
+  font-size:.7rem;font-weight:600;line-height:1.3;color:var(--text-soft);
 }
-.day-note i{width:6px;height:6px;border-radius:50%;background:var(--c,#8d99ae);flex:none;box-shadow:0 0 0 1px color-mix(in srgb, #000 10%, transparent);}
+.day-note i{width:7px;height:7px;border-radius:50%;background:var(--c,#8d99ae);flex:none;box-shadow:0 0 0 1px color-mix(in srgb, #000 10%, transparent);}
 .day-note span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .day-note.done{opacity:.55;}
 .day-note.done span{text-decoration:line-through;}
-.more{font-size:.58rem;font-weight:700;color:var(--muted);}
+.more{font-size:.64rem;font-weight:700;color:var(--muted);}
 
 .legend{
   margin:4px 0 0;font-size:.73rem;color:var(--muted);
@@ -558,7 +558,7 @@ label{font-size:.8rem;font-weight:600;color:var(--text-soft);display:block;margi
   .cat-name{white-space:nowrap;}
   .new-cat-btn{margin-top:0;width:auto;}
   .sidebar .hint{display:none;}
-  .cal-grid{grid-auto-rows:96px;gap:6px;}
+  .cal-grid{grid-auto-rows:110px;gap:6px;}
   .cal-grid.semana{grid-auto-rows:minmax(260px,1fr);}
   .day{border-radius:11px;padding:6px;}
   .day-num{width:24px;height:24px;font-size:.78rem;}
@@ -573,7 +573,7 @@ label{font-size:.8rem;font-weight:600;color:var(--text-soft);display:block;margi
   #monthTitle{font-size:1.15rem;min-width:0;}
   .cal-actions{width:100%;}
   .cal-actions .btn{flex:1;}
-  .cal-grid{grid-auto-rows:84px;}
+  .cal-grid{grid-auto-rows:96px;}
   .cal-grid.semana{grid-auto-rows:minmax(220px,1fr);}
   .day-label{display:none;}
   .day-notes .day-note:nth-child(n+3){display:none;}
