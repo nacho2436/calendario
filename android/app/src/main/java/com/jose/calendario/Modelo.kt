@@ -35,10 +35,13 @@ data class Usuario(
     val tema: String = "claro",
     val categorias: List<Categoria> = emptyList(),
     val notas: List<Nota> = emptyList(),
+    val notasEliminadas: List<BajaNota> = emptyList(),
     val actualizado: Long = 0L,   // marca de sincronización (el más nuevo gana)
 )
 
 data class BajaUsuario(val id: String, val nombre: String, val ts: Long)
+
+data class BajaNota(val id: String, val titulo: String, val fecha: String, val ts: Long)
 
 data class AppState(
     val version: Int = 1,
@@ -173,7 +176,10 @@ object Store {
 
     fun borrarNota(id: String) {
         val usr = usuario
-        app = conUsuario(usr.copy(notas = usr.notas.filter { it.id != id }))
+        val nota = usr.notas.firstOrNull { it.id == id }
+        val bajas = nota?.let { usr.notasEliminadas + BajaNota(it.id, it.titulo, it.fecha, System.currentTimeMillis()) }
+            ?: usr.notasEliminadas
+        app = conUsuario(usr.copy(notas = usr.notas.filter { it.id != id }, notasEliminadas = bajas))
         guardar()
     }
 
@@ -301,9 +307,26 @@ object Store {
             notas[m.id] = m
             usados.add(clave)
         }
+        // bajas de notas: la eliminación en cualquier dispositivo se propaga
+        val bajasNotas = HashMap<String, BajaNota>()
+        for (baja in base.notasEliminadas + otro.notasEliminadas){
+            val k = baja.id + "|" + normTxt(baja.titulo) + "|" + baja.fecha
+            val prev = bajasNotas[k]
+            if (prev == null || baja.ts > prev.ts) bajasNotas[k] = baja
+        }
+        val limite = System.currentTimeMillis() - 90L * 24 * 3600 * 1000
+        val listaBajas = bajasNotas.values.filter { it.ts > limite }
+        val eliminada = { n: Nota ->
+            listaBajas.any { baja ->
+                (baja.id.isNotEmpty() && baja.id == n.id ||
+                    normTxt(baja.titulo) == normTxt(n.titulo) && baja.fecha == n.fecha) &&
+                baja.ts > n.creada
+            }
+        }
         return base.copy(
             categorias = categorias.values.toList(),
-            notas = notas.values.toList(),
+            notas = notas.values.filter { !eliminada(it) },
+            notasEliminadas = listaBajas,
             actualizado = maxOf(a.actualizado, b.actualizado))
     }
 
@@ -378,6 +401,7 @@ object Store {
     private fun usuarioAJson(u: Usuario) = JSONObject().apply {
         put("id", u.id); put("nombre", u.nombre); put("avatar", u.avatar)
         put("color", u.color); put("tema", u.tema); put("actualizado", u.actualizado)
+        put("notasEliminadas", JSONArray(u.notasEliminadas.map { bajaNotaAJson(it) }))
         put("categorias", JSONArray(u.categorias.map { catAJson(it) }))
         put("notas", JSONArray(u.notas.map { notaAJson(it) }))
     }
@@ -385,9 +409,17 @@ object Store {
         id = o.getString("id"), nombre = o.getString("nombre"),
         avatar = o.optString("avatar", "🙂"), color = o.optString("color", "#4f6df5"),
         tema = o.optString("tema", "claro"), actualizado = o.optLong("actualizado", 0L),
+        notasEliminadas = o.optJSONArray("notasEliminadas")?.let { ja ->
+            (0 until ja.length()).map { bajaNotaDeJson(ja.getJSONObject(it)) } } ?: emptyList(),
         categorias = o.optJSONArray("categorias")?.let { ja -> (0 until ja.length()).map { catDeJson(ja.getJSONObject(it)) } } ?: emptyList(),
         notas = o.optJSONArray("notas")?.let { ja -> (0 until ja.length()).map { notaDeJson(ja.getJSONObject(it)) } } ?: emptyList(),
     )
+
+    private fun bajaNotaAJson(b: BajaNota) = JSONObject().apply {
+        put("id", b.id); put("titulo", b.titulo); put("fecha", b.fecha); put("ts", b.ts)
+    }
+    private fun bajaNotaDeJson(o: JSONObject) =
+        BajaNota(o.optString("id"), o.optString("titulo"), o.optString("fecha"), o.optLong("ts", 0L))
 
     private fun bajaAJson(b: BajaUsuario) = JSONObject().apply {
         put("id", b.id); put("nombre", b.nombre); put("ts", b.ts)

@@ -85,9 +85,28 @@ def fusionar_usuario(a, b):
         m['catId'] = mapa.get(m.get('catId'), m.get('catId'))
         notas[m['id']] = m
         usados.add(clave)
+    # bajas de notas: una eliminación en cualquier dispositivo se propaga
+    # (gana si es posterior a la creación de la nota; se olvidan a los 90 días)
+    bajas = {}
+    for baja in list(base.get('notasEliminadas', [])) + list(otro.get('notasEliminadas', [])):
+        clave = '%s|%s|%s' % (baja.get('id', ''), _norm(baja.get('titulo', '')), baja.get('fecha', ''))
+        if clave not in bajas or baja.get('ts', 0) > bajas[clave].get('ts', 0):
+            bajas[clave] = baja
+
+    def nota_eliminada(n):
+        for baja in bajas.values():
+            mismo = (baja.get('id') and baja.get('id') == n.get('id')) or (
+                _norm(baja.get('titulo', '')) == _norm(n.get('titulo', '')) and
+                baja.get('fecha') == n.get('fecha'))
+            if mismo and baja.get('ts', 0) > n.get('creada', 0):
+                return True
+        return False
+
+    limite = int(time.time() * 1000) - 90 * 24 * 3600 * 1000
     r = dict(base)
     r['categorias'] = list(categorias.values())
-    r['notas'] = list(notas.values())
+    r['notas'] = [n for n in notas.values() if not nota_eliminada(n)]
+    r['notasEliminadas'] = [b for b in bajas.values() if b.get('ts', 0) > limite]
     r['actualizado'] = max(a.get('actualizado', 0), b.get('actualizado', 0))
     return r
 

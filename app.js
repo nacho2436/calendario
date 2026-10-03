@@ -201,9 +201,23 @@ function fusionarUsuario(a, b){
     notas.set(n.id, { ...n, catId: mapa[n.catId] || n.catId });
     usados.add(clave);
   }
+  // bajas de notas: la eliminación en cualquier dispositivo se propaga
+  const bajasNotas = new Map();
+  for (const b of [...(base.notasEliminadas || []), ...(otro.notasEliminadas || [])]){
+    const k = `${b.id || ''}|${normTxt(b.titulo)}|${b.fecha || ''}`;
+    const prev = bajasNotas.get(k);
+    if (!prev || (b.ts || 0) > (prev.ts || 0)) bajasNotas.set(k, b);
+  }
+  const limiteBajas = Date.now() - 90 * 24 * 3600 * 1000;
+  const listaBajas = [...bajasNotas.values()].filter(b => (b.ts || 0) > limiteBajas);
+  const notasFinales = [...notas.values()].filter(n => !listaBajas.some(b =>
+    ((b.id && b.id === n.id) || (normTxt(b.titulo) === normTxt(n.titulo) && b.fecha === n.fecha)) &&
+    (b.ts || 0) > (n.creada || 0)
+  ));
   return { ...base,
     categorias: [...categorias.values()],
-    notas: [...notas.values()],
+    notas: notasFinales,
+    notasEliminadas: listaBajas,
     actualizado: Math.max(a.actualizado || 0, b.actualizado || 0) };
 }
 
@@ -1034,7 +1048,13 @@ function toggleNota(id){
 
 function eliminarNota(id){
   confirmar('¿Eliminar esta nota? Esta acción no se puede deshacer.', () => {
-    yo().notas = yo().notas.filter(n => n.id !== id);
+    const u = yo();
+    const nota = u.notas.find(n => n.id === id);
+    if (nota){
+      u.notasEliminadas = u.notasEliminadas || [];
+      u.notasEliminadas.push({ id: nota.id, titulo: nota.titulo, fecha: nota.fecha, ts: Date.now() });
+    }
+    u.notas = u.notas.filter(n => n.id !== id);
     guardar();
     refrescarTrasCambio();
     toast('Nota eliminada 🗑️');
