@@ -33,9 +33,14 @@ si el sistema lo pide. Requiere **Android 8.0 (API 26)** o superior.
 - **Notas repetitivas** (web): todos los días, cada semana, cada mes
   o cada año; los títulos se ven en letra pequeña dentro de cada día
   del calendario.
-- **Avisos** (web): notifica 5/15/30 minutos, 1 o 2 horas, o 1 día
-  antes de la nota (se pueden elegir varios), con notificación del
-  navegador, aviso interno y sonido mientras la página esté abierta.
+- **Avisos**: notifica 5/15/30 minutos, 1 o 2 horas, o 1 día antes
+  de la nota (se pueden elegir varios). En la web suenan mientras la
+  página esté abierta; en Android además llegan como notificación del
+  sistema mientras la app esté abierta. En ambas hay una ventana
+  central que hay que aceptar.
+- **Vistas de calendario** (v1.1): Hoy (agenda del día), Semana
+  (cuadros altos) o Mes, con notas en letra pequeña ajustadas dentro
+  de cada cuadro y hora en formato 12 h con am/pm.
 - Categorías: crear, editar y eliminar (con confirmación).
 - 6 temas: Claro, Oscuro, Azul noche, Bosque, Pastel y Café.
 - Usuarios independientes con avatar emoji.

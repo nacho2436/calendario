@@ -3,6 +3,11 @@
 package com.jose.calendario
 
 import android.app.Activity
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -72,8 +77,6 @@ import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -92,8 +95,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
@@ -112,10 +118,12 @@ val SWATCHES = listOf("#ef6c6c", "#f2913d", "#f5c542", "#66bb6a", "#31a3c3",
 val EMOJIS = listOf("🙂", "😎", "🤓", "🐱", "🐶", "🦊", "🐼", "🌸", "🌈", "⭐", "🌙",
     "🚀", "⚡", "🎨", "🎵", "⚽", "🎮", "📚", "💻", "🍕", "🎉", "🏆")
 
-val LocalTema = compositionLocalOf { TEMAS.first() }
+val LocalTema = androidx.compose.runtime.compositionLocalOf { TEMAS.first() }
 
 object Ui {
     var pestana by mutableStateOf(0)
+    var vistaCal by mutableStateOf("mes")            // "hoy" | "semana" | "mes"
+    var fechaBase by mutableStateOf(LocalDate.now()) // fecha de las vistas día/semana
     var filtroCat by mutableStateOf<String?>(null)
     var busqueda by mutableStateOf("")
     var estado by mutableStateOf("todas")
@@ -128,6 +136,9 @@ fun colorDeNota(n: Nota): Color {
     return Store.usuario.categorias.find { it.id == n.catId }?.color?.let { hex(it) }
         ?: Color(0xFF8D99AE)
 }
+
+fun notasQueOcurren(fecha: LocalDate): List<Nota> =
+    Store.usuario.notas.filter { Repeticiones.ocurreEn(it, fecha) }
 
 fun fechaLarga(f: String): String {
     val d = try { LocalDate.parse(f) } catch (e: Exception) { return f }
@@ -142,7 +153,19 @@ fun fechaLarga(f: String): String {
     }
 }
 
+/** Lunes de la semana de la fecha dada. */
+fun inicioSemana(d: LocalDate): LocalDate = d.minusDays(((d.dayOfWeek.value + 6) % 7).toLong())
+
 private data class Pestana(val titulo: String, val icono: ImageVector)
+
+fun pedirPermisoNotificaciones(contexto: android.content.Context, lanzador: ActivityResultLauncher<String>) {
+    if (Build.VERSION.SDK_INT >= 33 &&
+        ContextCompat.checkSelfPermission(contexto, "android.permission.POST_NOTIFICATIONS") !=
+        PackageManager.PERMISSION_GRANTED
+    ) {
+        lanzador.launch("android.permission.POST_NOTIFICATIONS")
+    }
+}
 
 /* ─────────── raíz de la app ─────────── */
 
@@ -154,6 +177,15 @@ fun Aplicacion() {
 
     LaunchedEffect(tema.id) {
         (contexto as? Activity)?.window?.statusBarColor = tema.scheme.primary.toArgb()
+    }
+
+    // motor de avisos: revisar cada 30 s mientras la app esté abierta
+    LaunchedEffect(Unit) {
+        MotorAvisos.iniciar(contexto)
+        while (true) {
+            MotorAvisos.revisar(contexto)
+            delay(30_000)
+        }
     }
 
     Scaffold(
@@ -185,13 +217,52 @@ fun Aplicacion() {
             }
         }
     }
+
+    // ventana central de aviso: hay que pulsar Aceptar
+    if (MotorAvisos.cola.isNotEmpty()) {
+        DialogoAviso(MotorAvisos.cola.first()) { MotorAvisos.aceptar() }
+    }
+}
+
+@Composable
+fun DialogoAviso(a: MotorAvisos.AvisoPendiente, onAceptar: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = { },   // solo se cierra con Aceptar
+        title = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                Text("🔔", fontSize = 44.sp)
+                Spacer(Modifier.height(6.dp))
+                Text(a.titulo, textAlign = TextAlign.Center, fontWeight = FontWeight.ExtraBold)
+            }
+        },
+        text = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    a.detalle, color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, fontSize = 13.sp,
+                    modifier = Modifier
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f), RoundedCornerShape(50))
+                        .padding(horizontal = 14.dp, vertical = 6.dp),
+                )
+                if (a.desc.isNotEmpty()) {
+                    Text(a.desc, fontSize = 13.sp, textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 10.dp))
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onAceptar, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
+                Text("✔ Aceptar")
+            }
+        },
+    )
 }
 
 /* ─────────── pantalla: calendario ─────────── */
 
 @Composable
 fun PantallaCalendario(sn: SnackbarHostState) {
-    var mes by remember { mutableStateOf(YearMonth.now()) }
     var notaEdit by remember { mutableStateOf<Nota?>(null) }
     var nuevaFecha by remember { mutableStateOf<String?>(null) }
     var diaAbierto by remember { mutableStateOf<String?>(null) }
@@ -202,31 +273,49 @@ fun PantallaCalendario(sn: SnackbarHostState) {
     fun aviso(m: String) { alc.launch { sn.showSnackbar(m) } }
 
     val u = Store.usuario
+    val mesBase = YearMonth.from(Ui.fechaBase)
+
+    fun navegar(delta: Int) {
+        Ui.fechaBase = when (Ui.vistaCal) {
+            "mes" -> Ui.fechaBase.plusMonths(delta.toLong())
+            "semana" -> Ui.fechaBase.plusWeeks(delta.toLong())
+            else -> Ui.fechaBase.plusDays(delta.toLong())
+        }
+    }
 
     Column(Modifier.fillMaxSize()) {
-        // título del mes
+        // título según la vista
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = { mes = mes.minusMonths(1) }) { Icon(Icons.Filled.KeyboardArrowLeft, "Mes anterior") }
+            IconButton(onClick = { navegar(-1) }) { Icon(Icons.Filled.KeyboardArrowLeft, "Anterior") }
             Text(
-                "${MESES[mes.monthValue - 1]} ${mes.year}",
+                when (Ui.vistaCal) {
+                    "mes" -> "${MESES[mesBase.monthValue - 1]} ${mesBase.year}"
+                    "semana" -> tituloSemana()
+                    else -> fechaLarga(Ui.fechaBase.toString())
+                },
                 modifier = Modifier.weight(1f),
                 textAlign = TextAlign.Center,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.ExtraBold,
             )
-            IconButton(onClick = { mes = mes.plusMonths(1) }) { Icon(Icons.Filled.KeyboardArrowRight, "Mes siguiente") }
+            IconButton(onClick = { navegar(1) }) { Icon(Icons.Filled.KeyboardArrowRight, "Siguiente") }
         }
+        // selector de vista + acciones
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            OutlinedButton(onClick = { mes = YearMonth.now() }, modifier = Modifier.weight(1f)) { Text("Hoy") }
-            Button(onClick = { nuevaFecha = LocalDate.now().toString() }, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                Text("  Nota")
+            OutlinedButton(onClick = { Ui.fechaBase = LocalDate.now() }) { Text("Hoy") }
+            SelectorVista(Modifier.weight(1f))
+            Button(onClick = {
+                nuevaFecha = if (Ui.vistaCal == "hoy") Ui.fechaBase.toString() else LocalDate.now().toString()
+            }) {
+                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                Text(" Nota")
             }
         }
         // categorías (filtro)
@@ -253,53 +342,79 @@ fun PantallaCalendario(sn: SnackbarHostState) {
                 FilterChip(selected = false, onClick = { nuevaCat = true }, label = { Text("＋ Categoría") })
             }
         }
-        // encabezado de días
-        Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp)) {
-            DIAS_CORTOS.forEachIndexed { i, d ->
-                Text(
-                    d,
-                    modifier = Modifier.weight(1f),
-                    textAlign = TextAlign.Center,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (i == 6) LocalTema.current.festivo else MaterialTheme.colorScheme.outline,
-                )
-            }
-        }
-        // rejilla
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(7),
-            modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
-        ) {
-            val offset = (mes.atDay(1).dayOfWeek.value + 6) % 7
-            items(42) { i ->
-                val fecha = mes.atDay(1).minusDays((offset - i).toLong())
-                val festivo = Festivos.nombre(fecha.toString())
-                val notas = u.notas
-                    .filter { it.fecha == fecha.toString() && (Ui.filtroCat == null || it.catId == Ui.filtroCat) }
-                    .sortedBy { it.hora }
-                CeldaDia(fecha, festivo, notas, otroMes = fecha.month != mes.month) { diaAbierto = fecha.toString() }
-            }
-        }
-        // leyenda
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(8.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                Box(Modifier.size(10.dp).background(LocalTema.current.festivo, RoundedCornerShape(3.dp)))
-                Text("Festivo", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline)
-            }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                Box(Modifier.size(10.dp).background(lerp(LocalTema.current.festivo, MaterialTheme.colorScheme.surface, 0.55f), RoundedCornerShape(3.dp)))
-                Text("Domingo", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline)
-            }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                Box(Modifier.size(8.dp).background(Color(0xFF4F6DF5), CircleShape))
-                Box(Modifier.size(8.dp).background(Color(0xFFF2913D), CircleShape))
-                Box(Modifier.size(8.dp).background(Color(0xFF66BB6A), CircleShape))
-                Text("Notas", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline)
+
+        when (Ui.vistaCal) {
+            "hoy" -> VistaDia(
+                onNuevaNota = { nuevaFecha = Ui.fechaBase.toString() },
+                onEditar = { notaEdit = it },
+                onEliminar = { n ->
+                    confirmar = "¿Eliminar la nota \"${n.titulo}\"?" to { Store.borrarNota(n.id); aviso("Nota eliminada 🗑️") }
+                },
+                onAlternar = { Store.alternarNota(it) },
+            )
+            else -> {
+                // encabezado de días
+                Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp)) {
+                    DIAS_CORTOS.forEachIndexed { i, d ->
+                        Text(
+                            d,
+                            modifier = Modifier.weight(1f),
+                            textAlign = TextAlign.Center,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (i == 6) LocalTema.current.festivo else MaterialTheme.colorScheme.outline,
+                        )
+                    }
+                }
+                val esMes = Ui.vistaCal == "mes"
+                val celdas: List<Pair<LocalDate, Boolean>> = if (esMes) {
+                    val primero = mesBase.atDay(1)
+                    val offset = (primero.dayOfWeek.value + 6) % 7
+                    (0..41).map { primero.minusDays((offset - it).toLong()) to true }
+                } else {
+                    val ini = inicioSemana(Ui.fechaBase)
+                    (0..6).map { ini.plusDays(it.toLong()) to false }
+                }
+                val alto: Dp = if (esMes) 116.dp else 320.dp
+                val maxLineas = if (esMes) 3 else 8
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(7),
+                    modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
+                    userScrollEnabled = !esMes,
+                ) {
+                    items(celdas.size) { i ->
+                        val (fecha, otroMes) = celdas[i]
+                        val festivo = Festivos.nombre(fecha.toString())
+                        val notas = notasQueOcurren(fecha)
+                            .filter { Ui.filtroCat == null || it.catId == Ui.filtroCat }
+                            .sortedBy { it.hora }
+                        CeldaDia(
+                            fecha = fecha, festivo = festivo, notas = notas,
+                            otroMes = otroMes && esMes, alto = alto, maxLineas = maxLineas,
+                        ) { diaAbierto = fecha.toString() }
+                    }
+                }
+                // leyenda
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Box(Modifier.size(10.dp).background(LocalTema.current.festivo, RoundedCornerShape(3.dp)))
+                        Text("Festivo", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline)
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Box(Modifier.size(10.dp).background(lerp(LocalTema.current.festivo, MaterialTheme.colorScheme.surface, 0.55f), RoundedCornerShape(3.dp)))
+                        Text("Domingo", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline)
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Box(Modifier.size(8.dp).background(Color(0xFF4F6DF5), CircleShape))
+                        Box(Modifier.size(8.dp).background(Color(0xFFF2913D), CircleShape))
+                        Box(Modifier.size(8.dp).background(Color(0xFF66BB6A), CircleShape))
+                        Text("Notas", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline)
+                    }
+                }
             }
         }
     }
@@ -345,8 +460,58 @@ fun PantallaCalendario(sn: SnackbarHostState) {
     }
 }
 
+fun tituloSemana(): String {
+    val ini = inicioSemana(Ui.fechaBase)
+    val fin = ini.plusDays(6)
+    val abr = { m: Int -> MESES[m].toLowerCase().substring(0, 3) }
+    return if (ini.month == fin.month)
+        "${ini.dayOfMonth} – ${fin.dayOfMonth} de ${MESES_MIN[ini.monthValue - 1]} ${fin.year}"
+    else
+        "${ini.dayOfMonth} ${abr(ini.monthValue)} – ${fin.dayOfMonth} ${abr(fin.monthValue)} ${fin.year}"
+}
+
 @Composable
-fun CeldaDia(fecha: LocalDate, festivo: String?, notas: List<Nota>, otroMes: Boolean, onClick: () -> Unit) {
+fun SelectorVista(modifier: Modifier = Modifier) {
+    Surface(
+        shape = RoundedCornerShape(50),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = modifier,
+    ) {
+        Row(
+            modifier = Modifier.padding(3.dp),
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            listOf("hoy" to "Hoy", "semana" to "Semana", "mes" to "Mes").forEach { (id, label) ->
+                val activo = Ui.vistaCal == id
+                Text(
+                    label,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (activo) MaterialTheme.colorScheme.onPrimary
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .background(
+                            if (activo) MaterialTheme.colorScheme.primary else Color.Transparent,
+                            RoundedCornerShape(50))
+                        .clickable { Ui.vistaCal = id }
+                        .padding(horizontal = 14.dp, vertical = 7.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun CeldaDia(
+    fecha: LocalDate,
+    festivo: String?,
+    notas: List<Nota>,
+    otroMes: Boolean,
+    alto: Dp,
+    maxLineas: Int,
+    onClick: () -> Unit,
+) {
     val hoy = fecha == LocalDate.now()
     val domingo = fecha.dayOfWeek.value == 7
     val sabado = fecha.dayOfWeek.value == 6
@@ -360,13 +525,14 @@ fun CeldaDia(fecha: LocalDate, festivo: String?, notas: List<Nota>, otroMes: Boo
     }
     val borde = if (festivo != null) lerp(rojo, MaterialTheme.colorScheme.outlineVariant, 0.55f)
     else MaterialTheme.colorScheme.outlineVariant
+    val cupo = if (maxLineas == 3 && festivo != null) 2 else maxLineas
 
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(10.dp),
         color = fondo,
         border = BorderStroke(1.dp, borde),
-        modifier = Modifier.padding(2.dp).fillMaxSize().alpha(if (otroMes) 0.45f else 1f),
+        modifier = Modifier.padding(2.dp).height(alto).alpha(if (otroMes) 0.45f else 1f),
     ) {
         Column(Modifier.padding(4.dp)) {
             Box(contentAlignment = Alignment.Center) {
@@ -391,9 +557,74 @@ fun CeldaDia(fecha: LocalDate, festivo: String?, notas: List<Nota>, otroMes: Boo
                 Text(festivo, fontSize = 8.sp, color = rojo, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Spacer(Modifier.weight(1f))
-            Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
-                notas.take(4).forEach { Box(Modifier.size(7.dp).background(colorDeNota(it), CircleShape)) }
-                if (notas.size > 4) Text("+${notas.size - 4}", fontSize = 9.sp, color = MaterialTheme.colorScheme.outline)
+            // títulos de notas en letra pequeña, ajustados al cuadro
+            notas.take(cupo).forEach { n ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Box(Modifier.size(6.dp).background(colorDeNota(n), CircleShape))
+                    Text(
+                        (if (n.repeticion.isNotEmpty()) "🔁 " else "") + n.titulo,
+                        fontSize = 9.sp, lineHeight = 11.sp,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textDecoration = if (n.done) TextDecoration.LineThrough else null,
+                    )
+                }
+            }
+            if (notas.size > cupo) {
+                Text("+${notas.size - cupo} más", fontSize = 9.sp, color = MaterialTheme.colorScheme.outline)
+            }
+        }
+    }
+}
+
+/** Vista "Hoy": agenda completa del día seleccionado. */
+@Composable
+fun VistaDia(
+    onNuevaNota: () -> Unit,
+    onEditar: (Nota) -> Unit,
+    onEliminar: (Nota) -> Unit,
+    onAlternar: (String) -> Unit,
+) {
+    val festivo = Festivos.nombre(Ui.fechaBase.toString())
+    val notas = notasQueOcurren(Ui.fechaBase)
+        .filter { Ui.filtroCat == null || it.catId == Ui.filtroCat }
+        .sortedBy { it.hora }
+    Column(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(fechaLarga(Ui.fechaBase.toString()), fontWeight = FontWeight.ExtraBold,
+                    style = MaterialTheme.typography.titleMedium)
+                if (festivo != null) {
+                    Text("🎉 $festivo", color = LocalTema.current.festivo, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+            Button(onClick = onNuevaNota) {
+                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                Text(" Nota")
+            }
+        }
+        if (notas.isEmpty()) {
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Text("Sin notas este día. ¡Agrega una! 📝", color = MaterialTheme.colorScheme.outline)
+            }
+        } else {
+            LazyColumn(Modifier.weight(1f)) {
+                items(notas, key = { it.id }) { n ->
+                    TarjetaNota(
+                        n = n, compacta = true,
+                        onEditar = { onEditar(n) },
+                        onEliminar = { onEliminar(n) },
+                        onAlternar = { onAlternar(n.id) },
+                    )
+                }
             }
         }
     }
@@ -415,7 +646,7 @@ fun PantallaNotas(sn: SnackbarHostState) {
         .filter { (Ui.estado == "todas") || ((Ui.estado == "hechas") == it.done) }
         .filter { Ui.filtroCat == null || it.catId == Ui.filtroCat }
         .filter { q.isEmpty() || (it.titulo + " " + it.desc).lowercase().contains(q) }
-        .sortedWith(compareBy({ it.fecha }, { it.hora }))
+        .sortedWith(compareBy({ Repeticiones.proximaFecha(it).toString() }, { it.hora }))
 
     Column(Modifier.fillMaxSize()) {
         OutlinedTextField(
@@ -470,7 +701,7 @@ fun PantallaNotas(sn: SnackbarHostState) {
                     }
                 }
             }
-            notas.groupBy { it.fecha }.forEach { (fecha, lista) ->
+            notas.groupBy { Repeticiones.proximaFecha(it).toString() }.forEach { (fecha, lista) ->
                 item(key = "h$fecha") {
                     Text(
                         fechaLarga(fecha),
@@ -517,6 +748,13 @@ fun TarjetaNota(n: Nota, compacta: Boolean = false, onEditar: () -> Unit, onElim
     val colorNota = colorDeNota(n)
     val ok = Color(0xFF2FB344)
 
+    val meta = buildString {
+        if (!compacta) append("📅 ${fechaLarga(Repeticiones.proximaFecha(n).toString())}")
+        if (n.hora.isNotEmpty()) { if (isNotEmpty()) append(" · "); append("⏰ ${fmtHora(n.hora)}") }
+        if (n.repeticion.isNotEmpty()) { if (isNotEmpty()) append(" · "); append("🔁 ${Repeticiones.CORTO[n.repeticion] ?: ""}") }
+        if (n.avisos.isNotEmpty()) { if (isNotEmpty()) append(" · "); append("🔔 ${n.avisos.joinToString(", ") { AvisosDef.corto(it) }} antes") }
+    }
+
     Surface(
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surface,
@@ -558,12 +796,9 @@ fun TarjetaNota(n: Nota, compacta: Boolean = false, onEditar: () -> Unit, onElim
                                 .padding(horizontal = 8.dp, vertical = 2.dp),
                         )
                     }
-                    if (!compacta) {
-                        Text(
-                            "📅 ${fechaLarga(n.fecha)}${if (n.hora.isNotEmpty()) " · ⏰ ${n.hora}" else ""}",
-                            fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 2.dp),
-                        )
+                    if (meta.isNotEmpty()) {
+                        Text(meta, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 2.dp))
                     }
                     if (n.desc.isNotEmpty()) {
                         Text(
@@ -721,6 +956,7 @@ fun PantallaUsuarios() {
 
 @Composable
 fun DialogoNota(nota: Nota?, fechaInicial: String, onCerrar: () -> Unit, onGuardar: (Nota) -> Unit) {
+    val contexto = LocalContext.current
     val cats = Store.usuario.categorias
     var titulo by remember { mutableStateOf(nota?.titulo ?: "") }
     var fecha by remember { mutableStateOf(fechaInicial) }
@@ -733,15 +969,19 @@ fun DialogoNota(nota: Nota?, fechaInicial: String, onCerrar: () -> Unit, onGuard
         )
     }
     var color by remember { mutableStateOf(nota?.color ?: "") }
+    var repeticion by remember { mutableStateOf(nota?.repeticion ?: "") }
+    var avisos by remember { mutableStateOf(nota?.avisos ?: emptyList<Int>()) }
     var mostrarCal by remember { mutableStateOf(false) }
     var mostrarHora by remember { mutableStateOf(false) }
     var menuCats by remember { mutableStateOf(false) }
+    var menuRep by remember { mutableStateOf(false) }
+    val permisoNotif = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
     AlertDialog(
         onDismissRequest = onCerrar,
         title = { Text(if (nota == null) "Nueva nota" else "Editar nota") },
         text = {
-            Column(Modifier.heightIn(max = 430.dp).verticalScroll(rememberScrollState())) {
+            Column(Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState())) {
                 OutlinedTextField(titulo, { titulo = it }, label = { Text("Título") },
                     singleLine = true, modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.height(10.dp))
@@ -750,37 +990,69 @@ fun DialogoNota(nota: Nota?, fechaInicial: String, onCerrar: () -> Unit, onGuard
                         Text(fechaLarga(fecha), maxLines = 1, fontSize = 12.sp)
                     }
                     OutlinedButton(onClick = { mostrarHora = true }, modifier = Modifier.weight(1f)) {
-                        Text(if (hora.isEmpty()) "⏰ Sin hora" else "⏰ $hora", maxLines = 1, fontSize = 12.sp)
+                        Text(if (hora.isEmpty()) "⏰ Sin hora" else "⏰ ${fmtHora(hora)}", maxLines = 1, fontSize = 12.sp)
                     }
                 }
                 Spacer(Modifier.height(4.dp))
-                ExposedDropdownMenuBox(expanded = menuCats, onExpandedChange = { menuCats = it }) {
-                    OutlinedTextField(
-                        value = cats.find { it.id == catId }?.nombre ?: "Sin categoría",
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Categoría") },
-                        trailingIcon = { Icon(Icons.Filled.KeyboardArrowDown, "Categoría") },
-                        modifier = Modifier.menuAnchor().fillMaxWidth(),
-                    )
-                    DropdownMenu(expanded = menuCats, onDismissRequest = { menuCats = false }) {
-                        cats.forEach { c ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ExposedDropdownMenuBox(expanded = menuCats, onExpandedChange = { menuCats = it }, modifier = Modifier.weight(1f)) {
+                        OutlinedTextField(
+                            value = cats.find { it.id == catId }?.nombre ?: "Sin categoría",
+                            onValueChange = {},
+                            readOnly = true, label = { Text("Categoría") },
+                            trailingIcon = { Icon(Icons.Filled.KeyboardArrowDown, "Categoría") },
+                            modifier = Modifier.menuAnchor().fillMaxWidth(),
+                        )
+                        DropdownMenu(expanded = menuCats, onDismissRequest = { menuCats = false }) {
+                            cats.forEach { c ->
+                                DropdownMenuItem(
+                                    text = { Text(c.nombre) },
+                                    leadingIcon = { Box(Modifier.size(10.dp).background(hex(c.color), CircleShape)) },
+                                    onClick = { catId = c.id; menuCats = false },
+                                )
+                            }
                             DropdownMenuItem(
-                                text = { Text(c.nombre) },
-                                leadingIcon = { Box(Modifier.size(10.dp).background(hex(c.color), CircleShape)) },
-                                onClick = { catId = c.id; menuCats = false },
+                                text = { Text("Sin categoría") },
+                                onClick = { catId = ""; menuCats = false },
                             )
                         }
-                        DropdownMenuItem(
-                            text = { Text("Sin categoría") },
-                            onClick = { catId = ""; menuCats = false },
+                    }
+                    ExposedDropdownMenuBox(expanded = menuRep, onExpandedChange = { menuRep = it }, modifier = Modifier.weight(1f)) {
+                        OutlinedTextField(
+                            value = Repeticiones.OPCIONES.firstOrNull { it.first == repeticion }?.second ?: "No repetir",
+                            onValueChange = {},
+                            readOnly = true, label = { Text("Repetir") },
+                            trailingIcon = { Icon(Icons.Filled.KeyboardArrowDown, "Repetir") },
+                            modifier = Modifier.menuAnchor().fillMaxWidth(),
                         )
+                        DropdownMenu(expanded = menuRep, onDismissRequest = { menuRep = false }) {
+                            Repeticiones.OPCIONES.forEach { (v, t) ->
+                                DropdownMenuItem(
+                                    text = { Text(t) },
+                                    onClick = { repeticion = v; menuRep = false },
+                                )
+                            }
+                        }
                     }
                 }
                 Spacer(Modifier.height(10.dp))
                 Text("Color de la nota", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(6.dp))
                 FilaSwatches(conAuto = true, valor = color) { color = it }
+                Spacer(Modifier.height(10.dp))
+                Text("Notificarme antes", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(6.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    AvisosDef.OPCIONES.forEach { (min, etiqueta) ->
+                        FilterChip(
+                            selected = avisos.contains(min),
+                            onClick = {
+                                avisos = if (avisos.contains(min)) avisos - min else (avisos + min).sorted()
+                            },
+                            label = { Text(etiqueta) },
+                        )
+                    }
+                }
                 Spacer(Modifier.height(10.dp))
                 OutlinedTextField(desc, { desc = it }, label = { Text("Descripción (opcional)") },
                     modifier = Modifier.fillMaxWidth(), minLines = 2)
@@ -792,10 +1064,11 @@ fun DialogoNota(nota: Nota?, fechaInicial: String, onCerrar: () -> Unit, onGuard
                     onGuardar(Nota(
                         id = nota?.id ?: UUID.randomUUID().toString(),
                         titulo = titulo.trim(), desc = desc.trim(), fecha = fecha, hora = hora,
-                        catId = catId, color = color,
+                        catId = catId, color = color, repeticion = repeticion, avisos = avisos,
                         done = nota?.done ?: false,
                         creada = nota?.creada ?: System.currentTimeMillis(),
                     ))
+                    if (avisos.isNotEmpty()) pedirPermisoNotificaciones(contexto, permisoNotif)
                 }
             }) { Text("Guardar") }
         },
@@ -838,7 +1111,7 @@ fun DialogoHora(actual: String, onListo: (Int, Int) -> Unit, onCerrar: () -> Uni
     val estado = rememberTimePickerState(
         initialHour = partes.getOrNull(0)?.toIntOrNull() ?: 9,
         initialMinute = partes.getOrNull(1)?.toIntOrNull() ?: 0,
-        is24Hour = true,
+        is24Hour = false,   // formato 12 h con am/pm
     )
     AlertDialog(
         onDismissRequest = onCerrar,
@@ -975,8 +1248,8 @@ fun DialogoDia(
     onEliminar: (Nota) -> Unit,
 ) {
     val festivo = Festivos.nombre(fecha)
-    val notas = Store.usuario.notas
-        .filter { it.fecha == fecha && (Ui.filtroCat == null || it.catId == Ui.filtroCat) }
+    val notas = notasQueOcurren(LocalDate.parse(fecha))
+        .filter { Ui.filtroCat == null || it.catId == Ui.filtroCat }
         .sortedBy { it.hora }
     AlertDialog(
         onDismissRequest = onCerrar,

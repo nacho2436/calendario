@@ -8,6 +8,7 @@ import androidx.compose.runtime.setValue
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.LocalDate
+import java.time.temporal.ChronoUnit
 import java.util.UUID
 
 data class Categoria(val id: String, val nombre: String, val color: String)
@@ -16,10 +17,12 @@ data class Nota(
     val id: String,
     val titulo: String,
     val desc: String = "",
-    val fecha: String,                 // yyyy-MM-dd
-    val hora: String = "",             // HH:mm (opcional)
+    val fecha: String,                 // yyyy-MM-dd (fecha de inicio)
+    val hora: String = "",             // HH:mm en 24 h (opcional)
     val catId: String = "",
     val color: String = "",            // "" → usa el color de la categoría
+    val repeticion: String = "",       // "" | diaria | semanal | mensual | anual
+    val avisos: List<Int> = emptyList(), // minutos antes (varios)
     val done: Boolean = false,
     val creada: Long = System.currentTimeMillis(),
 )
@@ -35,6 +38,75 @@ data class Usuario(
 )
 
 data class AppState(val version: Int = 1, val currentUserId: String, val users: List<Usuario>)
+
+/* ─────────── Repeticiones ─────────── */
+
+object Repeticiones {
+    val OPCIONES = listOf(
+        "" to "No repetir",
+        "diaria" to "Todos los días",
+        "semanal" to "Cada semana",
+        "mensual" to "Cada mes",
+        "anual" to "Cada año",
+    )
+    val CORTO = mapOf(
+        "diaria" to "cada día", "semanal" to "cada semana",
+        "mensual" to "cada mes", "anual" to "cada año",
+    )
+
+    /** ¿La nota ocurre en la fecha dada? (la repetición parte de su fecha inicial) */
+    fun ocurreEn(n: Nota, fecha: LocalDate): Boolean {
+        val inicio = try { LocalDate.parse(n.fecha) } catch (e: Exception) { return false }
+        if (n.repeticion.isEmpty()) return inicio == fecha
+        if (fecha.isBefore(inicio)) return false
+        return when (n.repeticion) {
+            "diaria" -> true
+            "semanal" -> ChronoUnit.DAYS.between(inicio, fecha) % 7 == 0L
+            "mensual" -> fecha.dayOfMonth == inicio.dayOfMonth
+            "anual" -> fecha.dayOfMonth == inicio.dayOfMonth && fecha.monthValue == inicio.monthValue
+            else -> false
+        }
+    }
+
+    /** Próxima fecha en que ocurre la nota (hoy o después). */
+    fun proximaFecha(n: Nota): LocalDate {
+        val inicio = try { LocalDate.parse(n.fecha) } catch (e: Exception) { return LocalDate.now() }
+        val hoy = LocalDate.now()
+        if (n.repeticion.isEmpty() || !inicio.isBefore(hoy)) return inicio
+        var d = hoy
+        repeat(800) {
+            if (ocurreEn(n, d)) return d
+            d = d.plusDays(1)
+        }
+        return inicio
+    }
+}
+
+/* ─────────── Avisos ─────────── */
+
+object AvisosDef {
+    val OPCIONES = listOf(
+        5 to "5 min", 15 to "15 min", 30 to "30 min",
+        60 to "1 hora", 120 to "2 horas", 1440 to "1 día",
+    )
+    fun etiqueta(min: Int) = when (min) {
+        5 -> "5 minutos antes"; 15 -> "15 minutos antes"; 30 -> "30 minutos antes"
+        60 -> "1 hora antes"; 120 -> "2 horas antes"; 1440 -> "1 día antes"
+        else -> "$min minutos antes"
+    }
+    fun corto(min: Int) = OPCIONES.firstOrNull { it.first == min }?.second ?: "$min min"
+}
+
+/** Hora guardada en 24 h, mostrada en 12 h con am/pm. */
+fun fmtHora(hora: String): String {
+    if (hora.isEmpty()) return ""
+    val partes = hora.split(":")
+    val h = partes.getOrNull(0)?.toIntOrNull() ?: return hora
+    val m = (partes.getOrNull(1) ?: "00").padStart(2, '0')
+    val suf = if (h < 12) "am" else "pm"
+    val h12 = if (h % 12 == 0) 12 else h % 12
+    return "$h12:$m $suf"
+}
 
 /**
  * Estado global de la app, persistido en SharedPreferences como JSON.
@@ -63,7 +135,7 @@ object Store {
 
     private fun validar(s: AppState): AppState {
         if (s.users.isEmpty()) return estadoInicial()
-        return if (s.users.any { it.id == s.currentUserId }) s
+        return if (s.users.any { it.id === s.currentUserId || it.id == s.currentUserId }) s
         else s.copy(currentUserId = s.users.first().id)
     }
 
@@ -188,13 +260,16 @@ object Store {
     private fun notaAJson(n: Nota) = JSONObject().apply {
         put("id", n.id); put("titulo", n.titulo); put("desc", n.desc); put("fecha", n.fecha)
         put("hora", n.hora); put("catId", n.catId); put("color", n.color)
+        put("repeticion", n.repeticion); put("avisos", JSONArray(n.avisos))
         put("done", n.done); put("creada", n.creada)
     }
     private fun notaDeJson(o: JSONObject) = Nota(
         id = o.getString("id"), titulo = o.getString("titulo"),
         desc = o.optString("desc", ""), fecha = o.getString("fecha"),
         hora = o.optString("hora", ""), catId = o.optString("catId", ""),
-        color = o.optString("color", ""), done = o.optBoolean("done", false),
+        color = o.optString("color", ""), repeticion = o.optString("repeticion", ""),
+        avisos = o.optJSONArray("avisos")?.let { ja -> (0 until ja.length()).map { ja.optInt(it) } } ?: emptyList(),
+        done = o.optBoolean("done", false),
         creada = o.optLong("creada", System.currentTimeMillis()),
     )
 
