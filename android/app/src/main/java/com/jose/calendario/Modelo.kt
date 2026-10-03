@@ -307,6 +307,7 @@ object Store {
             val nn = normTxt(c.nombre)
             val existente = porNombre[nn]
             if (existente != null) mapa[c.id] = existente.id
+            else if (categorias.containsKey(c.id)) mapa[c.id] = c.id   // renombrada: gana la más nueva
             else { categorias[c.id] = c; porNombre[nn] = c }
         }
         val notas = LinkedHashMap(base.notas.associateBy { it.id })

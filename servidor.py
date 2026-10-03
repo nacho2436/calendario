@@ -72,6 +72,8 @@ def fusionar_usuario(a, b):
         nn = _norm(c.get('nombre'))
         if nn in por_nombre:
             mapa[c['id']] = por_nombre[nn]['id']
+        elif c['id'] in categorias:
+            mapa[c['id']] = c['id']          # renombrada: la versión de base (más nueva) manda
         else:
             categorias[c['id']] = c
             por_nombre[nn] = c

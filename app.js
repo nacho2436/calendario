@@ -191,6 +191,7 @@ function fusionarUsuario(a, b){
   for (const c of otro.categorias || []){
     const nn = normTxt(c.nombre);
     if (porNombre.has(nn)) mapa[c.id] = porNombre.get(nn).id;
+    else if (categorias.has(c.id)) mapa[c.id] = c.id;   // renombrada: gana la versión de base (más nueva)
     else { categorias.set(c.id, c); porNombre.set(nn, c); }
   }
   const notas = new Map((base.notas || []).map(n => [n.id, n]));
