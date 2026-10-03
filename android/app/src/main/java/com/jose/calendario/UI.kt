@@ -15,6 +15,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -273,13 +274,13 @@ fun PantallaCalendario(sn: SnackbarHostState) {
     val u = Store.usuario
     val mesBase = YearMonth.from(Ui.fechaBase)
     val enFechaActual = when (Ui.vistaCal) {
-        "mes" -> mesBase == YearMonth.now()
+        "mes", "infografia" -> mesBase == YearMonth.now()
         else -> Ui.fechaBase == LocalDate.now()
     }
 
     fun navegar(delta: Int) {
         Ui.fechaBase = when (Ui.vistaCal) {
-            "mes" -> Ui.fechaBase.plusMonths(delta.toLong())
+            "mes", "infografia" -> Ui.fechaBase.plusMonths(delta.toLong())
             "semana" -> Ui.fechaBase.plusWeeks(delta.toLong())
             else -> Ui.fechaBase.plusDays(delta.toLong())
         }
@@ -296,7 +297,7 @@ fun PantallaCalendario(sn: SnackbarHostState) {
             }
             Text(
                 when (Ui.vistaCal) {
-                    "mes" -> "${MESES[mesBase.monthValue - 1]} ${mesBase.year}"
+                    "mes", "infografia" -> "${MESES[mesBase.monthValue - 1]} ${mesBase.year}"
                     "semana" -> tituloSemana()
                     else -> fechaLarga(Ui.fechaBase.toString())
                 },
@@ -363,6 +364,14 @@ fun PantallaCalendario(sn: SnackbarHostState) {
                 },
                 onAlternar = { Store.alternarNota(it) },
             )
+            "infografia" -> VistaInfografia(
+                onNuevaNota = { nuevaFecha = LocalDate.now().toString() },
+                onEditar = { notaEdit = it },
+                onEliminar = { n ->
+                    confirmar = "¿Eliminar la nota \"${n.titulo}\"?" to { Store.borrarNota(n.id); aviso("Nota eliminada 🗑️") }
+                },
+                onAlternar = { Store.alternarNota(it) },
+            )
             else -> {
                 // ── encabezado de días ──
                 Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp)) {
@@ -386,29 +395,38 @@ fun PantallaCalendario(sn: SnackbarHostState) {
                     val ini = inicioSemana(Ui.fechaBase)
                     (0..6).map { ini.plusDays(it.toLong()) }
                 }
-                // rejilla de filas iguales que llena exactamente el espacio
-                Column(
+                // rejilla: de base las filas se reparten la pantalla, pero crecen
+                // solas cuando un día tiene más notas de las que caben
+                BoxWithConstraints(
                     modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    fechas.chunked(7).forEach { semanaFechas ->
-                        Row(
-                            modifier = Modifier.weight(1f).fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            semanaFechas.forEach { fecha ->
-                                val festivo = Festivos.nombre(fecha.toString())
-                                val notas = notasQueOcurren(fecha)
-                                    .filter { Ui.filtroCat == null || it.catId == Ui.filtroCat }
-                                    .sortedBy { it.hora }
-                                CeldaDia(
-                                    fecha = fecha,
-                                    festivo = festivo,
-                                    notas = notas,
-                                    otroMes = esMes && fecha.month != mesBase.month,
-                                    maxPildoras = if (esMes) 2 else 7,
-                                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                                ) { diaAbierto = fecha.toString() }
+                    val filaBase = maxOf(52.dp, (maxHeight - 20.dp) / 6)
+                    val minFila = if (esMes) filaBase else maxHeight
+                    Column(
+                        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        fechas.chunked(7).forEach { semanaFechas ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth()
+                                    .heightIn(min = minFila)
+                                    .height(IntrinsicSize.Min),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                semanaFechas.forEach { fecha ->
+                                    val festivo = Festivos.nombre(fecha.toString())
+                                    val notas = notasQueOcurren(fecha)
+                                        .filter { Ui.filtroCat == null || it.catId == Ui.filtroCat }
+                                        .sortedBy { it.hora }
+                                    CeldaDia(
+                                        fecha = fecha,
+                                        festivo = festivo,
+                                        notas = notas,
+                                        otroMes = esMes && fecha.month != mesBase.month,
+                                        maxPildoras = if (esMes) 6 else 10,
+                                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                                    ) { diaAbierto = fecha.toString() }
+                                }
                             }
                         }
                     }
@@ -480,7 +498,7 @@ fun SelectorVista(modifier: Modifier = Modifier) {
             modifier = Modifier.padding(2.dp),
             horizontalArrangement = Arrangement.Center,
         ) {
-            listOf("hoy" to "Hoy", "semana" to "Semana", "mes" to "Mes").forEach { (id, label) ->
+            listOf("hoy" to "Hoy", "semana" to "Semana", "mes" to "Mes", "infografia" to "Infografía").forEach { (id, label) ->
                 val activo = Ui.vistaCal == id
                 Text(
                     label,
@@ -543,7 +561,7 @@ fun CeldaDia(
     }
     val borde = if (festivo != null) lerp(rojo, MaterialTheme.colorScheme.outlineVariant, 0.55f)
     else MaterialTheme.colorScheme.outlineVariant
-    val pequeña = maxPildoras <= 2
+    val pequeña = maxPildoras <= 6
 
     Surface(
         onClick = onClick,
@@ -652,6 +670,158 @@ fun VistaDia(
                         onAlternar = { onAlternar(n.id) },
                     )
                 }
+            }
+        }
+    }
+}
+
+/** Vista "Infografía": todas las notas del mes como línea de tiempo. */
+@Composable
+fun VistaInfografia(
+    onNuevaNota: () -> Unit,
+    onEditar: (Nota) -> Unit,
+    onEliminar: (Nota) -> Unit,
+    onAlternar: (String) -> Unit,
+) {
+    val mes = YearMonth.from(Ui.fechaBase)
+    val rojo = LocalTema.current.festivo
+    val dias = (1..mes.lengthOfMonth()).map { mes.atDay(it) }
+        .map { d -> d to notasQueOcurren(d)
+            .filter { Ui.filtroCat == null || it.catId == Ui.filtroCat }
+            .sortedBy { it.hora } }
+        .filter { it.second.isNotEmpty() }
+    val festivosMes = (1..mes.lengthOfMonth()).count { Festivos.nombre(mes.atDay(it).toString()) != null }
+
+    Column(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
+        // resumen del mes
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(
+                dias.sumOf { it.second.size }.toString() to "notas",
+                dias.size.toString() to "días con notas",
+                festivosMes.toString() to "festivos",
+            ).forEach { (num, txt) ->
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(num, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp,
+                            color = MaterialTheme.colorScheme.primary)
+                        Text(txt, fontSize = 10.sp, color = MaterialTheme.colorScheme.outline)
+                    }
+                }
+            }
+        }
+        if (dias.isEmpty()) {
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Sin notas en este mes 📝", color = MaterialTheme.colorScheme.outline)
+                    Spacer(Modifier.height(10.dp))
+                    Button(onClick = onNuevaNota) {
+                        Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Text(" Nota")
+                    }
+                }
+            }
+        } else {
+            LazyColumn(Modifier.weight(1f).padding(top = 10.dp)) {
+                items(dias.size, key = { dias[it].first.toString() }) { i ->
+                    val (fecha, notas) = dias[i]
+                    val festivo = Festivos.nombre(fecha.toString())
+                    val hoy = fecha == LocalDate.now()
+                    val domingo = fecha.dayOfWeek.value == 7
+                    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+                        // eje: círculo del día + línea conectora
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.width(48.dp).fillMaxHeight(),
+                        ) {
+                            Box(
+                                modifier = Modifier.size(44.dp)
+                                    .background(
+                                        when {
+                                            festivo != null -> rojo
+                                            domingo -> lerp(rojo, MaterialTheme.colorScheme.surface, 0.35f)
+                                            else -> MaterialTheme.colorScheme.primary
+                                        }, CircleShape),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text("${fecha.dayOfMonth}", color = Color.White,
+                                    fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+                            }
+                            if (i < dias.size - 1) {
+                                Box(
+                                    modifier = Modifier.fillMaxHeight().padding(top = 3.dp)
+                                        .width(3.dp)
+                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
+                                            RoundedCornerShape(2.dp)),
+                                )
+                            }
+                        }
+                        // contenido: fecha + notas
+                        Column(Modifier.weight(1f).padding(start = 10.dp, top = 2.dp, bottom = 14.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(fechaLarga(fecha.toString()),
+                                    fontWeight = FontWeight.Bold, fontSize = 13.sp,
+                                    modifier = Modifier.weight(1f, fill = false))
+                                if (hoy) {
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("HOY", fontSize = 10.sp, fontWeight = FontWeight.ExtraBold,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.background(
+                                            MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                                            RoundedCornerShape(50))
+                                            .padding(horizontal = 8.dp, vertical = 2.dp))
+                                }
+                            }
+                            if (festivo != null) {
+                                Text("🎉 $festivo", color = rojo, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Spacer(Modifier.height(6.dp))
+                            notas.forEach { n -> FilaInfografia(n) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun FilaInfografia(n: Nota) {
+    val c = colorDeNota(n)
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = c.copy(alpha = 0.10f),
+        border = BorderStroke(1.dp, c.copy(alpha = 0.35f)),
+        modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.size(9.dp).background(c, CircleShape))
+            Spacer(Modifier.width(9.dp))
+            Text(
+                (if (n.repeticion.isNotEmpty()) "🔁 " else "") + n.titulo,
+                fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                textDecoration = if (n.done) TextDecoration.LineThrough else null,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            Spacer(Modifier.width(6.dp))
+            val meta = buildString {
+                if (n.hora.isNotEmpty()) append("⏰ ${fmtHora(n.hora)}")
+                if (n.repeticion.isNotEmpty()) { if (isNotEmpty()) append(" "); append("🔁") }
+                if (n.avisos.isNotEmpty()) { if (isNotEmpty()) append(" "); append("🔔") }
+            }
+            if (meta.isNotEmpty()) {
+                Text(meta, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
