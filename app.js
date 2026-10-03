@@ -443,15 +443,27 @@ function htmlCelda(d, otroMes, maxLineas, recortarFestivo = false){
     .filter(n => !ui.filterCat || n.catId === ui.filterCat)
     .sort((a, b) => (a.hora || '').localeCompare(b.hora || ''));
   const cupo = recortarFestivo && festivo ? Math.min(maxLineas, 2) : maxLineas;
+  const tooltip = [
+    festivo ? '🎉 Festivo: ' + festivo : '',
+    ...notas.map(n => (n.repeticion ? '🔁 ' : '📝 ') + n.titulo + (n.hora ? ' (' + fmtHora(n.hora) + ')' : '') + (n.avisos?.length ? ' 🔔' : '')),
+  ].filter(Boolean).join('\n');
+  if (cupo === 0){
+    // modo compacto: solo puntos de color
+    const puntos = notas.slice(0, 4).map(n => `<i class="dot" style="background:${colorDe(n)}"></i>`).join('');
+    const extraPts = notas.length > 4 ? `<span class="more">+${notas.length - 4}</span>` : '';
+    return `
+    <div class="day${otroMes ? ' other' : ''}${key === todayKey() ? ' today' : ''}${festivo ? ' holiday' : ''}${esSabado ? ' weekend' : ''}${esDomingo ? ' domingo' : ''}"
+         data-key="${key}" title="${esc(tooltip)}">
+      <span class="day-num">${d.getDate()}</span>
+      ${festivo ? `<span class="day-label">${esc(festivo)}</span>` : ''}
+      <span class="day-dots">${puntos}${extraPts}</span>
+    </div>`;
+  }
   const lineas = notas.slice(0, cupo).map(n => `
       <div class="day-note${n.done ? ' done' : ''}" style="--c:${colorDe(n)}" title="${esc(n.titulo)}">
         <i></i><span>${n.repeticion ? '🔁 ' : ''}${esc(n.titulo)}</span>
       </div>`).join('');
   const extra  = notas.length > cupo ? `<span class="more">+${notas.length - cupo} más</span>` : '';
-  const tooltip = [
-    festivo ? '🎉 Festivo: ' + festivo : '',
-    ...notas.map(n => (n.repeticion ? '🔁 ' : '📝 ') + n.titulo + (n.hora ? ' (' + fmtHora(n.hora) + ')' : '') + (n.avisos?.length ? ' 🔔' : '')),
-  ].filter(Boolean).join('\n');
   return `
     <div class="day${otroMes ? ' other' : ''}${key === todayKey() ? ' today' : ''}${festivo ? ' holiday' : ''}${esSabado ? ' weekend' : ''}${esDomingo ? ' domingo' : ''}"
          data-key="${key}" title="${esc(tooltip)}">
@@ -459,6 +471,17 @@ function htmlCelda(d, otroMes, maxLineas, recortarFestivo = false){
       ${festivo ? `<span class="day-label">${esc(festivo)}</span>` : ''}
       <span class="day-notes">${lineas}${extra}</span>
     </div>`;
+}
+
+/* Filas fluidas del mes: cuántas notas caben según la altura real del cuadro.
+   0 = cuadro muy bajo → solo puntos de color (como Google Calendar). */
+let cupoMesActual = 3;
+function cupoMedido(){
+  const celda = $('#calGrid .day');
+  if (!celda) return 3;
+  const h = celda.getBoundingClientRect().height;
+  if (h < 74) return 0;
+  return Math.max(1, Math.min(4, Math.floor((h - 78) / 15)));
 }
 
 function renderGrid(modo){
@@ -469,7 +492,12 @@ function renderGrid(modo){
     const primero = new Date(ui.anio, ui.mes, 1);
     const offset  = (primero.getDay() + 6) % 7;      // la semana inicia el lunes
     for (let i = 0; i < 42; i++) celdas.push(new Date(ui.anio, ui.mes, 1 - offset + i));
-    grid.innerHTML = celdas.map(d => htmlCelda(d, d.getMonth() !== ui.mes, 3, true)).join('');
+    grid.innerHTML = celdas.map(d => htmlCelda(d, d.getMonth() !== ui.mes, cupoMesActual, false)).join('');
+    const medido = cupoMedido();                     // ajustar líneas a la altura que quedó
+    if (medido !== cupoMesActual){
+      cupoMesActual = medido;
+      renderGrid('mes');
+    }
   } else {
     const ini = inicioSemana(ui.fecha);
     for (let i = 0; i < 7; i++) celdas.push(new Date(ini.getFullYear(), ini.getMonth(), ini.getDate() + i));
@@ -968,6 +996,14 @@ function inicializar(){
     if (!b) return;
     ui.vistaCal = b.dataset.vista;
     renderCalendario();
+  });
+  // al cambiar el tamaño de la ventana, recalcular cuántas notas caben en el mes
+  let timerResize;
+  window.addEventListener('resize', () => {
+    clearTimeout(timerResize);
+    timerResize = setTimeout(() => {
+      if (ui.vista === 'calendario' && ui.vistaCal !== 'hoy') renderCalendario();
+    }, 150);
   });
   $('#userChip').onclick = () => { ui.vista = 'usuarios'; render(); };
   $('#themeSelect').onchange = e => definirTema(e.target.value);
