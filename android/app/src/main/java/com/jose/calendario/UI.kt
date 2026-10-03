@@ -537,7 +537,9 @@ fun SelectorVista(modifier: Modifier = Modifier) {
 /** Píldora compacta de nota (título de color sobre fondo tenue). */
 @Composable
 fun PildoraNota(n: Nota, pequeña: Boolean) {
-    val c = colorDeNota(n)
+    // letra blanca en negrita sobre el color sólido (ligeramente oscurecido
+    // para que el blanco siempre tenga contraste, incluso en amarillos)
+    val fondo = lerp(colorDeNota(n), Color.Black, 0.25f)
     Text(
         (if (n.repeticion.isNotEmpty()) "🔁 " else "") + n.titulo,
         // 2 líneas: en el celular la celda es angosta y con 1 línea no se lee el título
@@ -545,11 +547,12 @@ fun PildoraNota(n: Nota, pequeña: Boolean) {
         lineHeight = if (pequeña) 11.sp else 13.sp,
         maxLines = 2,
         overflow = TextOverflow.Ellipsis,
-        color = c,
+        color = Color.White,
+        fontWeight = FontWeight.Bold,
         textDecoration = if (n.done) TextDecoration.LineThrough else null,
         modifier = Modifier
             .alpha(if (n.done) 0.55f else 1f)
-            .background(c.copy(alpha = 0.16f), RoundedCornerShape(4.dp))
+            .background(fondo, RoundedCornerShape(4.dp))
             .padding(horizontal = 4.dp, vertical = 2.dp)
             .fillMaxWidth(),
     )
