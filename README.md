@@ -47,6 +47,19 @@ si el sistema lo pide. Requiere **Android 8.0 (API 26)** o superior.
 - La versión web guarda todo en `localStorage`; la Android en
   `SharedPreferences` (respaldo automático del sistema).
 
+## 🖥️ Servidor (web con SQLite y sincronización)
+
+```bash
+./menu.sh      # menú interactivo: arrancar / detener / reiniciar / ver datos
+./iniciar.sh   # arranque directo
+./detener.sh   # detención con confirmación
+```
+
+Al arrancar muestra las direcciones: en el PC `http://localhost:8177`
+y en el celular (misma red WiFi) `http://IP:8177`. Los datos viven en
+`datos/calendario.sqlite` y se sincronizan con la app Android
+(Usuarios → Sincronización con el servidor).
+
 ## 🔨 Compilar la APK en local
 
 Requisitos: JDK 17, Android SDK (platform 35 + build-tools 35.0.0)
