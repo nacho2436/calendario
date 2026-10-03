@@ -400,7 +400,7 @@ fun PantallaCalendario(sn: SnackbarHostState) {
                 BoxWithConstraints(
                     modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp),
                 ) {
-                    val filaBase = maxOf(52.dp, (maxHeight - 20.dp) / 6)
+                    val filaBase = maxOf(60.dp, (maxHeight - 20.dp) / 6)
                     val minFila = if (esMes) filaBase else maxHeight
                     Column(
                         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
@@ -524,16 +524,17 @@ fun PildoraNota(n: Nota, pequeña: Boolean) {
     val c = colorDeNota(n)
     Text(
         (if (n.repeticion.isNotEmpty()) "🔁 " else "") + n.titulo,
-        fontSize = if (pequeña) 8.sp else 10.sp,
-        lineHeight = if (pequeña) 10.sp else 13.sp,
-        maxLines = 1,
+        // 2 líneas: en el celular la celda es angosta y con 1 línea no se lee el título
+        fontSize = if (pequeña) 9.sp else 10.sp,
+        lineHeight = if (pequeña) 11.sp else 13.sp,
+        maxLines = 2,
         overflow = TextOverflow.Ellipsis,
         color = c,
         textDecoration = if (n.done) TextDecoration.LineThrough else null,
         modifier = Modifier
             .alpha(if (n.done) 0.55f else 1f)
             .background(c.copy(alpha = 0.16f), RoundedCornerShape(4.dp))
-            .padding(horizontal = 4.dp, vertical = 1.dp)
+            .padding(horizontal = 4.dp, vertical = 2.dp)
             .fillMaxWidth(),
     )
 }
