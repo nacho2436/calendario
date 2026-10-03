@@ -157,12 +157,74 @@ function cargar(){
     return data;
   } catch { return null; }
 }
-function guardar(){
+function guardar(sinBump = false){
+  if (!sinBump){
+    const u = state.users.find(x => x.id === state.currentUserId);
+    if (u) u.actualizado = Date.now();
+  }
   try { localStorage.setItem(STORE, JSON.stringify(state)); } catch { /* almacenamiento no disponible */ }
+  if (modoServidor) programarPushServidor();
 }
 
 let state = cargar() || estadoInicial();
 const yo  = () => state.users.find(u => u.id === state.currentUserId);
+
+/* ─────────── Sincronización con el servidor (si existe) ───────────
+   Cuando la página viene del servidor, los datos se guardan en su
+   base SQLite y se fusionan con otros dispositivos (p. ej. el
+   celular) usando la marca "actualizado": el más nuevo gana. */
+let modoServidor = false;
+let timerPush = null, timerPull = null;
+
+function fusionarEstados(local, remotos){
+  const porId = new Map(local.users.map(u => [u.id, u]));
+  for (const r of remotos || []){
+    const l = porId.get(r.id);
+    if (!l || (r.actualizado || 0) > (l.actualizado || 0)) porId.set(r.id, r);
+  }
+  const users = [...porId.values()];
+  const actual = users.some(u => u.id === local.currentUserId) ? local.currentUserId : users[0].id;
+  return { ...local, users, currentUserId: actual };
+}
+
+async function conectarServidor(){
+  try{
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 2500);
+    const resp = await fetch('/api/estado', { signal: ctrl.signal, cache: 'no-store' });
+    clearTimeout(t);
+    if (!resp.ok) return;
+    const remoto = await resp.json();
+    state = fusionarEstados(state, remoto.users);
+    guardar(true);
+    modoServidor = true;
+  } catch { modoServidor = false; }   // sin servidor (archivo local): modo localStorage
+}
+
+function programarPushServidor(){
+  clearTimeout(timerPush);
+  timerPush = setTimeout(() => {
+    const cuerpo = JSON.stringify({ users: [yo()] });
+    fetch('/api/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: cuerpo })
+      .catch(() => {});
+  }, 600);
+}
+
+async function sincronizarDesdeServidor(){
+  if (!modoServidor) return;
+  try{
+    const resp = await fetch('/api/estado', { cache: 'no-store' });
+    if (!resp.ok) return;
+    const remoto = await resp.json();
+    const huella = s => s.users.map(u => u.id + ':' + (u.actualizado || 0)).join('|');
+    const antes = huella(state);
+    state = fusionarEstados(state, remoto.users);
+    if (huella(state) !== antes){
+      try { localStorage.setItem(STORE, JSON.stringify(state)); } catch {}
+      render();
+    }
+  } catch {}
+}
 
 /* Helpers de dominio */
 const catDe       = nota => yo().categorias.find(c => c.id === nota.catId);
@@ -931,7 +993,7 @@ function usarUsuario(id){
   if (id === state.currentUserId) return;
   state.currentUserId = id;
   ui.filterCat = null;
-  guardar();
+  guardar(true);
   aplicarTema();
   render();
   toast(`Sesión: ${yo().nombre} 👋`);
@@ -1020,7 +1082,7 @@ function manejarAccion(e){
 }
 
 /* ─────────── 13. Inicialización ─────────── */
-function inicializar(){
+async function inicializar(){
   $('#calWeekdays').innerHTML = DIAS_CORTOS.map(d => `<span>${d}</span>`).join('');
   $('#themeSelect').innerHTML = TEMAS.map(t => `<option value="${t.id}">${t.nombre}</option>`).join('');
   // selector de hora en formato 12 h
@@ -1125,9 +1187,14 @@ function inicializar(){
 
   $('#avisoAceptar').addEventListener('click', mostrarSiguienteAviso);
 
+  await conectarServidor();
   aplicarTema();
   guardar();   // persiste también el estado inicial la primera vez
   render();
+  if (modoServidor){
+    timerPull = setInterval(sincronizarDesdeServidor, 30000);
+    window.addEventListener('focus', sincronizarDesdeServidor);
+  }
 
   // verificador de notificaciones (mientras la página esté abierta)
   setTimeout(revisarAvisos, 3000);
