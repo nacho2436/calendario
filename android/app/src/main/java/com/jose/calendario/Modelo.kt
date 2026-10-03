@@ -203,6 +203,18 @@ object Store {
         guardar()
     }
 
+    fun moverCategoria(id: String, delta: Int) {
+        val usr = usuario
+        val idx = usr.categorias.indexOfFirst { it.id == id }
+        val destino = idx + delta
+        if (idx < 0 || destino < 0 || destino >= usr.categorias.size) return
+        val lista = usr.categorias.toMutableList()
+        val c = lista.removeAt(idx)
+        lista.add(destino, c)
+        app = conUsuario(usr.copy(categorias = lista))
+        guardar()
+    }
+
     fun nuevoUsuario(nombre: String, avatar: String, color: String): Usuario {
         val cats = categoriasPorDefecto()
         return Usuario(

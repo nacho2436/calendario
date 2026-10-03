@@ -47,6 +47,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
@@ -273,6 +274,7 @@ fun PantallaCalendario(sn: SnackbarHostState) {
     var diaAbierto by remember { mutableStateOf<String?>(null) }
     var catEdit by remember { mutableStateOf<Categoria?>(null) }
     var nuevaCat by remember { mutableStateOf(false) }
+    var gestionCats by remember { mutableStateOf(false) }
     var confirmar by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
     val alc = rememberCoroutineScope()
     fun aviso(m: String) { alc.launch { sn.showSnackbar(m) } }
@@ -357,7 +359,8 @@ fun PantallaCalendario(sn: SnackbarHostState) {
                 )
             }
             item {
-                FilterChip(selected = false, onClick = { nuevaCat = true }, label = { Text("＋") })
+                FilterChip(selected = false, onClick = { gestionCats = true },
+                    label = { Text("⚙️") })
             }
         }
 
@@ -464,6 +467,13 @@ fun PantallaCalendario(sn: SnackbarHostState) {
                     Store.borrarNota(n.id); aviso("Nota eliminada 🗑️")
                 }
             },
+        )
+    }
+    if (gestionCats) {
+        DialogoGestionCategorias(
+            onCerrar = { gestionCats = false },
+            onNueva = { gestionCats = false; nuevaCat = true },
+            onEditar = { gestionCats = false; catEdit = it },
         )
     }
     if (nuevaCat || catEdit != null) {
@@ -1524,6 +1534,64 @@ fun FilaSwatches(conAuto: Boolean, valor: String, onElegir: (String) -> Unit) {
                     .clickable { onElegir(c) },
             )
         }
+    }
+}
+
+@Composable
+fun DialogoGestionCategorias(
+    onCerrar: () -> Unit,
+    onNueva: () -> Unit,
+    onEditar: (Categoria) -> Unit,
+) {
+    var confirmando by remember { mutableStateOf<Categoria?>(null) }
+    val cats = Store.usuario.categorias
+    val notas = Store.usuario.notas
+    AlertDialog(
+        onDismissRequest = onCerrar,
+        title = { Text("Categorías") },
+        text = {
+            Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+                cats.forEachIndexed { i, c ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                    ) {
+                        Box(Modifier.size(12.dp).background(hex(c.color), CircleShape))
+                        Spacer(Modifier.width(8.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(c.nombre, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                            Text("${notas.count { it.catId == c.id }} notas",
+                                fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+                        }
+                        IconButton(onClick = { Store.moverCategoria(c.id, -1) },
+                            enabled = i > 0, modifier = Modifier.size(30.dp)) {
+                            Icon(Icons.Filled.KeyboardArrowUp, "Subir", modifier = Modifier.size(18.dp))
+                        }
+                        IconButton(onClick = { Store.moverCategoria(c.id, +1) },
+                            enabled = i < cats.size - 1, modifier = Modifier.size(30.dp)) {
+                            Icon(Icons.Filled.KeyboardArrowDown, "Bajar", modifier = Modifier.size(18.dp))
+                        }
+                        IconButton(onClick = { onEditar(c) }, modifier = Modifier.size(30.dp)) {
+                            Icon(Icons.Filled.Edit, "Editar", modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        IconButton(onClick = { confirmando = c }, modifier = Modifier.size(30.dp)) {
+                            Icon(Icons.Filled.Delete, "Eliminar", modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onNueva) { Text("＋ Nueva") } },
+        dismissButton = { TextButton(onClick = onCerrar) { Text("Cerrar") } },
+    )
+    confirmando?.let { c ->
+        DialogoConfirmar(
+            mensaje = "¿Eliminar la categoría \"${c.nombre}\"? Sus ${notas.count { it.catId == c.id }} nota(s) quedarán sin categoría.",
+            onSi = { Store.borrarCategoria(c.id); confirmando = null },
+            onNo = { confirmando = null },
+        )
     }
 }
 
