@@ -46,12 +46,17 @@
     <section class="view active" id="view-calendario">
       <div class="cal-toolbar">
         <div class="month-nav">
-          <button class="btn icon" id="prevMonth" title="Mes anterior">‹</button>
+          <button class="btn icon" id="prevMonth" title="Anterior">‹</button>
           <h2 id="monthTitle">—</h2>
-          <button class="btn icon" id="nextMonth" title="Mes siguiente">›</button>
+          <button class="btn icon" id="nextMonth" title="Siguiente">›</button>
+        </div>
+        <div class="vista-seg" id="vistaSeg">
+          <button data-vista="hoy" title="Vista del día">Hoy</button>
+          <button data-vista="semana" title="Vista semanal">Semana</button>
+          <button data-vista="mes" class="active" title="Vista mensual">Mes</button>
         </div>
         <div class="cal-actions">
-          <button class="btn" id="todayBtn">Hoy</button>
+          <button class="btn" id="todayBtn" title="Ir a hoy">Hoy</button>
           <button class="btn primary" id="newNoteCalBtn">＋ Nota</button>
         </div>
       </div>
@@ -61,7 +66,8 @@
         <div class="calendar">
           <div class="cal-weekdays" id="calWeekdays"></div>
           <div class="cal-grid" id="calGrid"></div>
-          <p class="legend">
+          <div class="vista-dia" id="vistaDia" hidden></div>
+          <p class="legend" id="calLegend">
             <span class="lg lg-holiday"></span> Festivo de Colombia
             <span class="lg lg-domingo"></span> Domingo (descanso)
             <span class="lg lg-note"></span> Notas del día
@@ -230,6 +236,17 @@
     </div>
     <div id="dayNotes" class="day-notes"></div>
     <button class="btn primary block" id="dayAddNote">＋ Agregar nota este día</button>
+  </div>
+</div>
+
+<!-- ══════════ MODAL: AVISO DE RECORDATORIO ══════════ -->
+<div class="modal-overlay aviso" id="modal-aviso">
+  <div class="modal modal-aviso">
+    <div class="aviso-icono">🔔</div>
+    <h3 id="avisoTitulo">Recordatorio</h3>
+    <p class="aviso-detalle" id="avisoDetalle"></p>
+    <p class="aviso-desc" id="avisoDesc"></p>
+    <button class="btn primary block aviso-btn" id="avisoAceptar">✔ Aceptar</button>
   </div>
 </div>
 

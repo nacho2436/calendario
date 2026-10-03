@@ -261,8 +261,6 @@ function revisarAvisos(){
 
 function dispararAviso(nota, av){
   const def = avisoDef(av);
-  const texto = `⏰ ${nota.titulo} · ${def.label} (${fmtHora(nota.hora)})`;
-  toast(texto);
   if ('Notification' in window && Notification.permission === 'granted'){
     try{
       new Notification(`⏰ ${nota.titulo}`, {
@@ -271,13 +269,44 @@ function dispararAviso(nota, av){
       });
     } catch {}
   }
+  encolarAviso({
+    titulo: nota.titulo,
+    detalle: `${def.label} — comienza a las ${fmtHora(nota.hora)}`,
+    desc: nota.desc || '',
+  });
+}
+
+/* Ventana central de aviso: hay que pulsar Aceptar (no se cierra con
+   clic por fuera ni con Escape). Si llegan varios avisos, van en cola. */
+const colaAvisos = [];
+function encolarAviso(aviso){
+  colaAvisos.push(aviso);
+  if (!$('#modal-aviso').classList.contains('open')) mostrarSiguienteAviso();
+}
+function mostrarSiguienteAviso(){
+  const a = colaAvisos.shift();
+  if (!a){
+    if ($('#modal-aviso').classList.contains('open')) cerrarModal($('#modal-aviso'));
+    return;
+  }
+  $('#avisoTitulo').textContent = a.titulo;
+  $('#avisoDetalle').textContent = a.detalle;
+  const d = $('#avisoDesc');
+  d.textContent = a.desc;
+  d.style.display = a.desc ? '' : 'none';
+  abrirModal('modal-aviso');
+  sonarAviso();
+}
+function sonarAviso(){
   try{
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = ctx.createOscillator(), gain = ctx.createGain();
-    osc.connect(gain); gain.connect(ctx.destination);
-    osc.frequency.value = 830; gain.gain.value = 0.14;
-    osc.start(); osc.stop(ctx.currentTime + 0.2);
-    setTimeout(() => ctx.close(), 500);
+    [0, 0.35, 0.7].forEach(t => {
+      const osc = ctx.createOscillator(), gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.frequency.value = 830; gain.gain.value = 0.14;
+      osc.start(ctx.currentTime + t); osc.stop(ctx.currentTime + t + 0.18);
+    });
+    setTimeout(() => ctx.close(), 1300);
   } catch {}
 }
 
@@ -289,7 +318,9 @@ function avisosDe(nota){
 const HOY = new Date();
 const ui = {
   vista: 'calendario',
+  vistaCal: 'mes',                       // 'hoy' | 'semana' | 'mes'
   anio: HOY.getFullYear(), mes: HOY.getMonth(),
+  fecha: HOY,                            // fecha base de las vistas día y semana
   filterCat: null, busqueda: '', estado: 'todas', dayKey: null,
 };
 
@@ -330,14 +361,48 @@ function definirTema(id){
 
 /* ─────────── 6. Vista Calendario ─────────── */
 function renderCalendario(){
-  $('#monthTitle').textContent = `${MESES[ui.mes]} ${ui.anio}`;
+  $$('#vistaSeg button').forEach(b => b.classList.toggle('active', b.dataset.vista === ui.vistaCal));
+  const esDia = ui.vistaCal === 'hoy';
+  $('#calWeekdays').hidden = esDia;
+  $('#calGrid').hidden = esDia;
+  $('#calLegend').hidden = esDia;
+  $('#vistaDia').hidden = !esDia;
+  if (ui.vistaCal === 'mes'){
+    $('#monthTitle').textContent = `${MESES[ui.mes]} ${ui.anio}`;
+    renderGrid('mes');
+  } else if (ui.vistaCal === 'semana'){
+    $('#monthTitle').textContent = tituloSemana();
+    renderGrid('semana');
+  } else {
+    $('#monthTitle').textContent = fmtFechaLarga(keyOf(ui.fecha));
+    renderVistaDia();
+  }
   renderSidebar();
-  renderGrid();
 }
 function mudarMes(delta){
   const d = new Date(ui.anio, ui.mes + delta, 1);
   ui.anio = d.getFullYear(); ui.mes = d.getMonth();
   renderCalendario();
+}
+/** Navegación ‹ › según la vista activa: mes, semana o día. */
+function navegar(delta){
+  if (ui.vistaCal === 'mes'){ mudarMes(delta); return; }
+  const paso = ui.vistaCal === 'semana' ? 7 : 1;
+  ui.fecha = new Date(ui.fecha.getFullYear(), ui.fecha.getMonth(), ui.fecha.getDate() + paso * delta);
+  renderCalendario();
+}
+/** Lunes de la semana de la fecha dada. */
+function inicioSemana(d){
+  const iso = d.getDay() === 0 ? 7 : d.getDay();
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() - (iso - 1));
+}
+function tituloSemana(){
+  const ini = inicioSemana(ui.fecha);
+  const fin = new Date(ini.getFullYear(), ini.getMonth(), ini.getDate() + 6);
+  const abr = m => MESES[m].toLowerCase().slice(0, 3);
+  return ini.getMonth() === fin.getMonth()
+    ? `${ini.getDate()} – ${fin.getDate()} de ${MESES[ini.getMonth()].toLowerCase()} ${fin.getFullYear()}`
+    : `${ini.getDate()} ${abr(ini.getMonth())} – ${fin.getDate()} ${abr(fin.getMonth())} ${fin.getFullYear()}`;
 }
 
 function renderSidebar(){
@@ -367,38 +432,70 @@ function renderSidebar(){
     <p class="hint">Toca una categoría para filtrar. Con ✏️ editas y con 🗑️ eliminas.</p>`;
 }
 
-function renderGrid(){
-  const primero = new Date(ui.anio, ui.mes, 1);
-  const offset  = (primero.getDay() + 6) % 7;      // semana inicia el lunes
-  let html = '';
-  for (let i = 0; i < 42; i++){
-    const d   = new Date(ui.anio, ui.mes, 1 - offset + i);
-    const key = keyOf(d);
-    const otroMes  = d.getMonth() !== ui.mes;
-    const festivo  = nombreFestivo(key);
-    const esDomingo = d.getDay() === 0;
-    const esSabado  = d.getDay() === 6;
-    const notas = notasQueOcurren(key)
-      .filter(n => !ui.filterCat || n.catId === ui.filterCat)
-      .sort((a, b) => (a.hora || '').localeCompare(b.hora || ''));
-    const lineas = notas.slice(0, 3).map(n => `
-        <div class="day-note${n.done ? ' done' : ''}" style="--c:${colorDe(n)}" title="${esc(n.titulo)}">
-          <i></i><span>${n.repeticion ? '🔁 ' : ''}${esc(n.titulo)}</span>
-        </div>`).join('');
-    const extra  = notas.length > 3 ? `<span class="more">+${notas.length - 3} más</span>` : '';
-    const tooltip = [
-      festivo ? '🎉 Festivo: ' + festivo : '',
-      ...notas.map(n => (n.repeticion ? '🔁 ' : '📝 ') + n.titulo + (n.hora ? ' (' + fmtHora(n.hora) + ')' : '') + (n.avisos?.length ? ' 🔔' : '')),
-    ].filter(Boolean).join('\n');
-    html += `
-      <div class="day${otroMes ? ' other' : ''}${key === todayKey() ? ' today' : ''}${festivo ? ' holiday' : ''}${esSabado ? ' weekend' : ''}${esDomingo ? ' domingo' : ''}"
-           data-key="${key}" title="${esc(tooltip)}">
-        <span class="day-num">${d.getDate()}</span>
-        ${festivo ? `<span class="day-label">${esc(festivo)}</span>` : ''}
-        <span class="day-notes">${lineas}${extra}</span>
-      </div>`;
+/** HTML de una celda de día (la usan las vistas mensual y semanal).
+    maxLineas se reduce con festivo para que todo quepa dentro del cuadro. */
+function htmlCelda(d, otroMes, maxLineas, recortarFestivo = false){
+  const key = keyOf(d);
+  const festivo  = nombreFestivo(key);
+  const esDomingo = d.getDay() === 0;
+  const esSabado  = d.getDay() === 6;
+  const notas = notasQueOcurren(key)
+    .filter(n => !ui.filterCat || n.catId === ui.filterCat)
+    .sort((a, b) => (a.hora || '').localeCompare(b.hora || ''));
+  const cupo = recortarFestivo && festivo ? Math.min(maxLineas, 2) : maxLineas;
+  const lineas = notas.slice(0, cupo).map(n => `
+      <div class="day-note${n.done ? ' done' : ''}" style="--c:${colorDe(n)}" title="${esc(n.titulo)}">
+        <i></i><span>${n.repeticion ? '🔁 ' : ''}${esc(n.titulo)}</span>
+      </div>`).join('');
+  const extra  = notas.length > cupo ? `<span class="more">+${notas.length - cupo} más</span>` : '';
+  const tooltip = [
+    festivo ? '🎉 Festivo: ' + festivo : '',
+    ...notas.map(n => (n.repeticion ? '🔁 ' : '📝 ') + n.titulo + (n.hora ? ' (' + fmtHora(n.hora) + ')' : '') + (n.avisos?.length ? ' 🔔' : '')),
+  ].filter(Boolean).join('\n');
+  return `
+    <div class="day${otroMes ? ' other' : ''}${key === todayKey() ? ' today' : ''}${festivo ? ' holiday' : ''}${esSabado ? ' weekend' : ''}${esDomingo ? ' domingo' : ''}"
+         data-key="${key}" title="${esc(tooltip)}">
+      <span class="day-num">${d.getDate()}</span>
+      ${festivo ? `<span class="day-label">${esc(festivo)}</span>` : ''}
+      <span class="day-notes">${lineas}${extra}</span>
+    </div>`;
+}
+
+function renderGrid(modo){
+  const grid = $('#calGrid');
+  grid.classList.toggle('semana', modo === 'semana');
+  let celdas = [];
+  if (modo === 'mes'){
+    const primero = new Date(ui.anio, ui.mes, 1);
+    const offset  = (primero.getDay() + 6) % 7;      // la semana inicia el lunes
+    for (let i = 0; i < 42; i++) celdas.push(new Date(ui.anio, ui.mes, 1 - offset + i));
+    grid.innerHTML = celdas.map(d => htmlCelda(d, d.getMonth() !== ui.mes, 3, true)).join('');
+  } else {
+    const ini = inicioSemana(ui.fecha);
+    for (let i = 0; i < 7; i++) celdas.push(new Date(ini.getFullYear(), ini.getMonth(), ini.getDate() + i));
+    grid.innerHTML = celdas.map(d => htmlCelda(d, false, 8)).join('');
   }
-  $('#calGrid').innerHTML = html;
+}
+
+/** Vista "Hoy": agenda completa del día seleccionado. */
+function renderVistaDia(){
+  const key = keyOf(ui.fecha);
+  const festivo = nombreFestivo(key);
+  const notas = notasQueOcurren(key)
+    .filter(n => !ui.filterCat || n.catId === ui.filterCat)
+    .sort((a, b) => (a.hora || '23:59').localeCompare(b.hora || '23:59'));
+  $('#vistaDia').innerHTML = `
+    <div class="dia-cabecera">
+      <h3>${esc(fmtFechaLarga(key))}</h3>
+      ${festivo ? `<span class="holiday-badge">🎉 ${esc(festivo)}</span>` : ''}
+      <span class="chip-count">${notas.length} nota${notas.length === 1 ? '' : 's'}</span>
+      <button class="btn primary sm" id="diaAddBtn">＋ Nota este día</button>
+    </div>
+    <div class="dia-lista">
+      ${notas.length
+        ? notas.map(n => notaCardHTML(n, { conFecha: false })).join('')
+        : '<div class="empty">Sin notas este día.<br>¡Agrega una! 📝</div>'}
+    </div>`;
 }
 
 /* ─────────── 7. Vista Notas ─────────── */
@@ -502,7 +599,7 @@ function cerrarModal(ov){
   if (ov.id === 'modal-day') ui.dayKey = null;
 }
 function cerrarUltimo(){
-  const abiertos = $$('.modal-overlay.open');
+  const abiertos = $$('.modal-overlay.open').filter(m => m.id !== 'modal-aviso');   // el aviso exige Aceptar
   if (abiertos.length) cerrarModal(abiertos[abiertos.length - 1]);
 }
 
@@ -859,21 +956,32 @@ function inicializar(){
     ui.vista = b.dataset.view;
     render();
   });
-  $('#prevMonth').onclick = () => mudarMes(-1);
-  $('#nextMonth').onclick = () => mudarMes(1);
+  $('#prevMonth').onclick = () => navegar(-1);
+  $('#nextMonth').onclick = () => navegar(1);
   $('#todayBtn').onclick = () => {
     const d = new Date();
-    ui.anio = d.getFullYear(); ui.mes = d.getMonth();
+    ui.fecha = d; ui.anio = d.getFullYear(); ui.mes = d.getMonth();
     renderCalendario();
   };
+  $('#vistaSeg').addEventListener('click', e => {
+    const b = e.target.closest('button[data-vista]');
+    if (!b) return;
+    ui.vistaCal = b.dataset.vista;
+    renderCalendario();
+  });
   $('#userChip').onclick = () => { ui.vista = 'usuarios'; render(); };
   $('#themeSelect').onchange = e => definirTema(e.target.value);
 
   /* Calendario */
-  $('#newNoteCalBtn').onclick = () => abrirModalNota(null, todayKey());
+  $('#newNoteCalBtn').onclick = () =>
+    abrirModalNota(null, ui.vistaCal === 'hoy' ? keyOf(ui.fecha) : todayKey());
   $('#calGrid').addEventListener('click', e => {
     const celda = e.target.closest('.day');
     if (celda) abrirModalDia(celda.dataset.key);
+  });
+  $('#vistaDia').addEventListener('click', e => {
+    if (e.target.closest('#diaAddBtn')){ abrirModalNota(null, keyOf(ui.fecha)); return; }
+    manejarAccion(e);
   });
 
   /* Delegación de listas */
@@ -917,12 +1025,14 @@ function inicializar(){
     e.target.value = '';
   });
 
-  /* Cierre de modales */
+  /* Cierre de modales (la ventana de aviso solo se cierra con Aceptar) */
   $$('.modal-overlay').forEach(ov => {
-    ov.addEventListener('mousedown', ev => { if (ev.target === ov) cerrarModal(ov); });
+    ov.addEventListener('mousedown', ev => { if (ev.target === ov && ov.id !== 'modal-aviso') cerrarModal(ov); });
     $$('[data-close]', ov).forEach(b => b.addEventListener('click', () => cerrarModal(ov)));
   });
   document.addEventListener('keydown', ev => { if (ev.key === 'Escape') cerrarUltimo(); });
+
+  $('#avisoAceptar').addEventListener('click', mostrarSiguienteAviso);
 
   aplicarTema();
   guardar();   // persiste también el estado inicial la primera vez
