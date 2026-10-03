@@ -363,16 +363,21 @@ function definirTema(id){
 function renderCalendario(){
   $$('#vistaSeg button').forEach(b => b.classList.toggle('active', b.dataset.vista === ui.vistaCal));
   const esDia = ui.vistaCal === 'hoy';
-  $('#calWeekdays').hidden = esDia;
-  $('#calGrid').hidden = esDia;
-  $('#calLegend').hidden = esDia;
+  const esInfo = ui.vistaCal === 'infografia';
+  $('#calWeekdays').hidden = esDia || esInfo;
+  $('#calGrid').hidden = esDia || esInfo;
+  $('#calLegend').hidden = esDia || esInfo;
   $('#vistaDia').hidden = !esDia;
+  $('#vistaInfo').hidden = !esInfo;
   if (ui.vistaCal === 'mes'){
     $('#monthTitle').textContent = `${MESES[ui.mes]} ${ui.anio}`;
     renderGrid('mes');
   } else if (ui.vistaCal === 'semana'){
     $('#monthTitle').textContent = tituloSemana();
     renderGrid('semana');
+  } else if (esInfo){
+    $('#monthTitle').textContent = `${MESES[ui.mes]} ${ui.anio}`;
+    renderVistaInfografia();
   } else {
     $('#monthTitle').textContent = fmtFechaLarga(keyOf(ui.fecha));
     renderVistaDia();
@@ -386,7 +391,7 @@ function mudarMes(delta){
 }
 /** Navegación ‹ › según la vista activa: mes, semana o día. */
 function navegar(delta){
-  if (ui.vistaCal === 'mes'){ mudarMes(delta); return; }
+  if (ui.vistaCal === 'mes' || ui.vistaCal === 'infografia'){ mudarMes(delta); return; }
   const paso = ui.vistaCal === 'semana' ? 7 : 1;
   ui.fecha = new Date(ui.fecha.getFullYear(), ui.fecha.getMonth(), ui.fecha.getDate() + paso * delta);
   renderCalendario();
@@ -473,15 +478,18 @@ function htmlCelda(d, otroMes, maxLineas, recortarFestivo = false){
     </div>`;
 }
 
-/* Filas fluidas del mes: cuántas notas caben según la altura real del cuadro.
-   0 = cuadro muy bajo → solo puntos de color (como Google Calendar). */
+/* Filas fluidas del mes: cuántas notas caben según la altura disponible.
+   Se mide ANTES de pintar (la altura de la rejilla no depende del contenido),
+   así no hay re-ajuste visible al cambiar de vista. 0 = modo puntos. */
 let cupoMesActual = 3;
-function cupoMedido(){
-  const celda = $('#calGrid .day');
-  if (!celda) return 3;
-  const h = celda.getBoundingClientRect().height;
-  if (h < 74) return 0;
-  return Math.max(1, Math.min(4, Math.floor((h - 78) / 15)));
+function cupoPorAltura(){
+  const grid = $('#calGrid');
+  if (!grid) return cupoMesActual;
+  const h = grid.getBoundingClientRect().height;
+  if (!h) return cupoMesActual;          // rejilla oculta: conservar el último valor
+  const fila = h / 6;
+  cupoMesActual = fila < 74 ? 0 : Math.max(1, Math.min(4, Math.floor((fila - 78) / 15)));
+  return cupoMesActual;
 }
 
 function renderGrid(modo){
@@ -489,20 +497,60 @@ function renderGrid(modo){
   grid.classList.toggle('semana', modo === 'semana');
   let celdas = [];
   if (modo === 'mes'){
+    const cupo = cupoPorAltura();                    // medir antes de pintar: sin salto visual
     const primero = new Date(ui.anio, ui.mes, 1);
     const offset  = (primero.getDay() + 6) % 7;      // la semana inicia el lunes
     for (let i = 0; i < 42; i++) celdas.push(new Date(ui.anio, ui.mes, 1 - offset + i));
-    grid.innerHTML = celdas.map(d => htmlCelda(d, d.getMonth() !== ui.mes, cupoMesActual, false)).join('');
-    const medido = cupoMedido();                     // ajustar líneas a la altura que quedó
-    if (medido !== cupoMesActual){
-      cupoMesActual = medido;
-      renderGrid('mes');
-    }
+    grid.innerHTML = celdas.map(d => htmlCelda(d, d.getMonth() !== ui.mes, cupo, false)).join('');
   } else {
     const ini = inicioSemana(ui.fecha);
     for (let i = 0; i < 7; i++) celdas.push(new Date(ini.getFullYear(), ini.getMonth(), ini.getDate() + i));
     grid.innerHTML = celdas.map(d => htmlCelda(d, false, 8)).join('');
   }
+}
+
+/** Vista "Infografía": todas las notas del mes como línea de tiempo. */
+function renderVistaInfografia(){
+  const diasMes = new Date(ui.anio, ui.mes + 1, 0).getDate();
+  const prefijo = `${ui.anio}-${pad(ui.mes + 1)}`;
+  const filas = [];
+  let totalNotas = 0;
+  for (let d = 1; d <= diasMes; d++){
+    const key = `${prefijo}-${pad(d)}`;
+    const notas = notasQueOcurren(key)
+      .filter(n => !ui.filterCat || n.catId === ui.filterCat)
+      .sort((a, b) => (a.hora || '23:59').localeCompare(b.hora || '23:59'));
+    if (!notas.length) continue;
+    totalNotas += notas.length;
+    const festivo = nombreFestivo(key);
+    const fecha = new Date(ui.anio, ui.mes, d);
+    const esDomingo = fecha.getDay() === 0;
+    const etiqueta = (key === todayKey() ? 'Hoy · ' : '') +
+      `${DIAS_LARGOS[fecha.getDay()]}, ${d} de ${MESES[ui.mes].toLowerCase()}`;
+    filas.push(`
+      <div class="info-fila">
+        <div class="info-eje">
+          <span class="info-circulo${festivo ? ' festivo' : esDomingo ? ' domingo' : ''}${key === todayKey() ? ' hoy' : ''}">${d}</span>
+        </div>
+        <div class="info-contenido">
+          <div class="info-fecha">${esc(etiqueta)}${festivo ? ` <span class="holiday-badge">🎉 ${esc(festivo)}</span>` : ''}</div>
+          ${notas.map(n => `
+            <div class="info-nota${n.done ? ' done' : ''}" style="--c:${colorDe(n)}">
+              <i></i>
+              <span class="t">${n.repeticion ? '🔁 ' : ''}${esc(n.titulo)}</span>
+              <span class="meta">${n.hora ? '⏰ ' + fmtHora(n.hora) : ''}${n.repeticion ? ' ' + REP_CORTO[n.repeticion] : ''}${n.avisos?.length ? ' 🔔' : ''}</span>
+            </div>`).join('')}
+        </div>
+      </div>`);
+  }
+  const festivosMes = [...festivosDelAnio(ui.anio).keys()].filter(k => k.startsWith(prefijo)).length;
+  $('#vistaInfo').innerHTML = `
+    <div class="info-resumen">
+      <div class="info-dato"><strong>${totalNotas}</strong><span>notas este mes</span></div>
+      <div class="info-dato"><strong>${filas.length}</strong><span>días con notas</span></div>
+      <div class="info-dato"><strong>${festivosMes}</strong><span>festivos</span></div>
+    </div>
+    ${filas.length ? filas.join('') : '<div class="empty">Sin notas en este mes.<br>Crea una con el botón ＋ Nota 📝</div>'}`;
 }
 
 /** Vista "Hoy": agenda completa del día seleccionado. */

@@ -78,6 +78,7 @@ body[data-theme="cafe"]{
 }
 
 /* ---------- Base ---------- */
+[hidden]{display:none !important;}   /* el atributo hidden siempre gana (evita vistas solapadas) */
 *{box-sizing:border-box;
   transition:background-color .25s ease, border-color .25s ease, color .25s ease, box-shadow .25s ease;}
 html{scroll-behavior:smooth;}
@@ -598,4 +599,51 @@ label{font-size:.8rem;font-weight:600;color:var(--text-soft);display:block;margi
   .note-actions{grid-column:1 / -1;justify-content:flex-end;}
   .row-2{grid-template-columns:1fr;}
   .emoji-grid{grid-template-columns:repeat(6,1fr);}
+}
+
+/* ---------- Vista Infografía del mes ---------- */
+.vista-info{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:14px;padding:4px 2px 24px;}
+.info-resumen{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+.info-dato{
+  background:var(--surface);border:1px solid var(--border);border-radius:14px;
+  padding:10px 12px;text-align:center;box-shadow:var(--shadow);
+}
+.info-dato strong{display:block;font-size:1.35rem;font-weight:800;color:var(--accent);line-height:1.2;}
+.info-dato span{font-size:.62rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;}
+.info-fila{display:flex;gap:14px;}
+.info-eje{display:flex;flex-direction:column;align-items:center;width:46px;flex:none;}
+.info-eje::after{
+  content:'';flex:1;width:3px;border-radius:2px;margin-top:4px;
+  background:color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.info-fila:last-child .info-eje::after{background:transparent;}
+.info-circulo{
+  width:46px;height:46px;border-radius:50%;display:grid;place-items:center;
+  font-size:1.02rem;font-weight:800;background:var(--accent);color:var(--accent-contrast);
+  box-shadow:0 4px 12px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.info-circulo.festivo{background:var(--holiday);box-shadow:0 4px 12px color-mix(in srgb, var(--holiday) 35%, transparent);}
+.info-circulo.domingo{background:color-mix(in srgb, var(--holiday) 62%, var(--surface));}
+.info-circulo.hoy{outline:3px solid color-mix(in srgb, var(--accent) 45%, transparent);outline-offset:2px;}
+.info-contenido{flex:1;min-width:0;padding:2px 0 16px;}
+.info-fecha{
+  font-weight:800;font-size:.88rem;text-transform:capitalize;
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:7px;
+}
+.info-nota{
+  display:flex;align-items:center;gap:9px;
+  background:color-mix(in srgb, var(--c,#8d99ae) 10%, var(--surface));
+  border:1px solid color-mix(in srgb, var(--c,#8d99ae) 30%, transparent);
+  border-left:4px solid var(--c,#8d99ae);
+  border-radius:10px;padding:8px 12px;margin-bottom:6px;
+}
+.info-nota i{width:9px;height:9px;border-radius:50%;background:var(--c,#8d99ae);flex:none;}
+.info-nota .t{font-weight:700;font-size:.84rem;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.info-nota .meta{font-size:.7rem;font-weight:600;color:var(--text-soft);white-space:nowrap;}
+.info-nota.done{opacity:.6;}
+.info-nota.done .t{text-decoration:line-through;}
+@media (max-width:640px){
+  .vista-seg button{padding:6px 8px;font-size:.68rem;}
+  .info-resumen{gap:6px;}
+  .info-dato strong{font-size:1.05rem;}
 }
