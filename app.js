@@ -324,6 +324,14 @@ const ui = {
   filterCat: null, busqueda: '', estado: 'todas', dayKey: null,
 };
 
+let timerResize = null;
+function programarRerenderCalendario(){
+  clearTimeout(timerResize);
+  timerResize = setTimeout(() => {
+    if (ui.vista === 'calendario' && ui.vistaCal !== 'hoy') renderCalendario();
+  }, 120);
+}
+
 /* ─────────── 5. Render principal ─────────── */
 function render(){
   $$('#tabs .tab').forEach(t => t.classList.toggle('active', t.dataset.view === ui.vista));
@@ -482,22 +490,28 @@ function htmlCelda(d, otroMes, maxLineas, recortarFestivo = false){
    Se mide ANTES de pintar (la altura de la rejilla no depende del contenido),
    así no hay re-ajuste visible al cambiar de vista. 0 = modo puntos. */
 let cupoMesActual = 3;
+let mesCompacto = false;   // cuadros bajos: número pequeño + 1 línea de texto legible
 function cupoPorAltura(){
   const grid = $('#calGrid');
   if (!grid) return cupoMesActual;
   const h = grid.getBoundingClientRect().height;
   if (!h) return cupoMesActual;          // rejilla oculta: conservar el último valor
   const fila = h / 6;
-  cupoMesActual = fila < 74 ? 0 : Math.max(1, Math.min(4, Math.floor((fila - 78) / 15)));
+  mesCompacto = fila >= 40 && fila < 62;
+  if (fila < 40) cupoMesActual = 0;                       // extremo: solo puntos
+  else if (fila < 62) cupoMesActual = 1;                  // compacto: 1 línea de texto
+  else cupoMesActual = Math.max(1, Math.min(4, Math.floor((fila - 48) / 15)));
   return cupoMesActual;
 }
 
 function renderGrid(modo){
   const grid = $('#calGrid');
+  if (modo === 'mes') cupoPorAltura();               // medir ANTES: define cupo y modo compacto
   grid.classList.toggle('semana', modo === 'semana');
+  grid.classList.toggle('compacta', modo === 'mes' && mesCompacto);
   let celdas = [];
   if (modo === 'mes'){
-    const cupo = cupoPorAltura();                    // medir antes de pintar: sin salto visual
+    const cupo = cupoMesActual;
     const primero = new Date(ui.anio, ui.mes, 1);
     const offset  = (primero.getDay() + 6) % 7;      // la semana inicia el lunes
     for (let i = 0; i < 42; i++) celdas.push(new Date(ui.anio, ui.mes, 1 - offset + i));
@@ -1046,13 +1060,10 @@ function inicializar(){
     renderCalendario();
   });
   // al cambiar el tamaño de la ventana, recalcular cuántas notas caben en el mes
-  let timerResize;
-  window.addEventListener('resize', () => {
-    clearTimeout(timerResize);
-    timerResize = setTimeout(() => {
-      if (ui.vista === 'calendario' && ui.vistaCal !== 'hoy') renderCalendario();
-    }, 150);
-  });
+  window.addEventListener('resize', programarRerenderCalendario);
+  if ('ResizeObserver' in window){
+    new ResizeObserver(programarRerenderCalendario).observe($('#calGrid'));
+  }
   $('#userChip').onclick = () => { ui.vista = 'usuarios'; render(); };
   $('#themeSelect').onchange = e => definirTema(e.target.value);
 

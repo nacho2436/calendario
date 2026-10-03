@@ -293,7 +293,16 @@ label{font-size:.8rem;font-weight:600;color:var(--text-soft);display:block;margi
   font-size:.6rem;font-weight:700;color:var(--holiday);line-height:1.25;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
-/* Puntos de color (modo compacto en pantallas bajas) */
+/* Modo compacto: cuadros bajos pero con 1 línea de texto legible */
+.cal-grid.compacta .day{padding:3px 4px;border-radius:9px;gap:1px;}
+.cal-grid.compacta .day-num{width:17px;height:17px;font-size:.66rem;}
+.cal-grid.compacta .day.today .day-num{width:19px;height:19px;}
+.cal-grid.compacta .day-label{display:none;}
+.cal-grid.compacta .day-note{font-size:.62rem;line-height:1.25;gap:3px;}
+.cal-grid.compacta .day-note i{width:5px;height:5px;}
+.cal-grid.compacta .more{display:none;}   /* el tooltip y el modal del día muestran el resto */
+
+/* Puntos de color (solo en alturas extremas) */
 .day-dots{margin-top:auto;display:flex;align-items:center;gap:3px;flex-wrap:wrap;min-height:8px;}
 .dot{width:8px;height:8px;border-radius:50%;flex:none;box-shadow:0 0 0 1px color-mix(in srgb, #000 12%, transparent);}
 
@@ -546,7 +555,7 @@ label{font-size:.8rem;font-weight:600;color:var(--text-soft);display:block;margi
   font-size:.66rem;font-weight:800;padding:3px 10px;border-radius:999px;
   text-transform:none;white-space:nowrap;
 }
-.day-notes{display:flex;flex-direction:column;gap:10px;margin:16px 0 14px;min-height:40px;}
+.day-modal-notes{display:flex;flex-direction:column;gap:10px;margin:16px 0 14px;}
 #dayAddNote{margin-top:2px;}
 
 /* ---------- Toast ---------- */
