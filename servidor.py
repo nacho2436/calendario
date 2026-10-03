@@ -23,6 +23,7 @@ PUERTO = 8177
 DB = os.path.join(BASE, 'datos', 'calendario.sqlite')
 os.makedirs(os.path.dirname(DB), exist_ok=True)
 CANDADO = threading.Lock()
+CANDADO_LOG = threading.Lock()
 
 ESTATICOS = {  # solo estos archivos se sirven (la ruta puede traer ?v=N)
     '/': ('index.html', 'text/html; charset=utf-8'),
@@ -221,7 +222,9 @@ class Manejador(BaseHTTPRequestHandler):
             return self.json_({'error': str(e)}, 400)
 
     def log_message(self, fmt, *args):
-        pass  # silencioso; el log general va al archivo redirigido
+        with CANDADO_LOG:
+            with open(os.path.join(BASE, 'datos', 'servidor.log'), 'a') as f:
+                f.write(f'{time.strftime("%Y-%m-%d %H:%M:%S")} {self.client_address[0]} {fmt % args}\n')
 
 
 def ip_lan():

@@ -412,17 +412,36 @@ object Store {
 /* ─────────── Sincronización con el servidor web ─────────── */
 
 object Sincronizacion {
+    /** Completa la dirección: "192.168.1.17:8177" → "http://192.168.1.17:8177". */
+    fun normalizarUrl(entrada: String): String {
+        var s = entrada.trim()
+        if (s.isNotEmpty() && !s.startsWith("http://") && !s.startsWith("https://")) s = "http://$s"
+        return s.trimEnd('/')
+    }
+
     /** POST JSON al servidor; devuelve el cuerpo de la respuesta. */
     fun httpPost(url: String, cuerpo: String): String {
-        val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+        val conn = try {
+            java.net.URL(url).openConnection() as java.net.HttpURLConnection
+        } catch (e: java.net.MalformedURLException) {
+            throw Exception("dirección no válida (ej.: http://192.168.1.17:8177)")
+        }
         conn.requestMethod = "POST"
-        conn.connectTimeout = 4000
-        conn.readTimeout = 10000
+        conn.connectTimeout = 5000
+        conn.readTimeout = 12000
         conn.doOutput = true
         conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-        conn.outputStream.use { it.write(cuerpo.toByteArray(Charsets.UTF_8)) }
+        try {
+            conn.outputStream.use { it.write(cuerpo.toByteArray(Charsets.UTF_8)) }
+        } catch (e: java.net.SocketTimeoutException) {
+            throw Exception("sin respuesta · ¿el PC y el celular están en la misma red WiFi?")
+        } catch (e: java.net.ConnectException) {
+            throw Exception("conexión rechazada · ¿está encendido el servidor? (./menu.sh)")
+        } catch (e: java.net.UnknownHostException) {
+            throw Exception("no se encuentra esa dirección · revisa la IP en ./menu.sh")
+        }
         val codigo = conn.responseCode
-        if (codigo !in 200..299) throw Exception("HTTP $codigo")
+        if (codigo !in 200..299) throw Exception("el servidor respondió HTTP $codigo")
         return conn.inputStream.bufferedReader().use { it.readText() }
     }
 }

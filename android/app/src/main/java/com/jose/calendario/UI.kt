@@ -1175,7 +1175,7 @@ fun SeccionSincronizacion() {
         OutlinedTextField(
             value = url,
             onValueChange = { url = it },
-            label = { Text("Servidor (http://IP-del-PC:8177)") },
+            label = { Text("Servidor (http://IP-del-PC:8177 · el http:// puede omitirse)") },
             placeholder = { Text("http://192.168.1.17:8177") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
@@ -1184,7 +1184,7 @@ fun SeccionSincronizacion() {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(
                 onClick = {
-                    val destino = url.trim().trimEnd('/').removeSuffix("/api/sync")
+                    val destino = Sincronizacion.normalizarUrl(url).removeSuffix("/api/sync")
                     if (destino.isEmpty()){ estado = "Escribe la dirección del servidor"; return@Button }
                     ocupado = true; estado = "Sincronizando…"
                     alcance.launch {
