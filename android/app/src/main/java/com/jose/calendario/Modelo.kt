@@ -35,6 +35,7 @@ data class Usuario(
     val tema: String = "claro",
     val categorias: List<Categoria> = emptyList(),
     val notas: List<Nota> = emptyList(),
+    val actualizado: Long = 0L,   // marca de sincronización (el más nuevo gana)
 )
 
 data class AppState(val version: Int = 1, val currentUserId: String, val users: List<Usuario>)
@@ -130,6 +131,11 @@ object Store {
     }
 
     fun guardar() {
+        val u = app.users.firstOrNull { it.id == app.currentUserId }
+        if (u != null) {
+            val ahora = System.currentTimeMillis()
+            app = app.copy(users = app.users.map { if (it.id == u.id) it.copy(actualizado = ahora) else it })
+        }
         prefs.edit().putString("estado", aJson(app)).apply()
     }
 
@@ -250,6 +256,33 @@ object Store {
         return AppState(currentUserId = u.id, users = listOf(u))
     }
 
+    /* ─────────── sincronización con el servidor web ─────────── */
+
+    fun exportarUsuariosJson(): String =
+        JSONObject().put("users", JSONArray(app.users.map { usuarioAJson(it) })).toString()
+
+    /** Fusiona los usuarios del servidor (el más nuevo gana). Devuelve cambios aplicados. */
+    fun importarYFusionar(texto: String): Int {
+        val lista = JSONObject(texto).optJSONArray("users") ?: return 0
+        val entrantes = (0 until lista.length()).map { usuarioDeJson(lista.getJSONObject(it)) }
+        var cambios = 0
+        val fusionados = app.users.toMutableList()
+        for (r in entrantes){
+            val i = fusionados.indexOfFirst { it.id == r.id }
+            when {
+                i < 0 -> { fusionados.add(r); cambios++ }
+                r.actualizado > fusionados[i].actualizado -> { fusionados[i] = r; cambios++ }
+            }
+        }
+        var nuevo = app.copy(users = fusionados)
+        if (!fusionados.any { it.id == nuevo.currentUserId }){
+            nuevo = nuevo.copy(currentUserId = fusionados.firstOrNull()?.id ?: nuevo.currentUserId)
+        }
+        app = nuevo
+        guardar()
+        return cambios
+    }
+
     /* ─────────── serialización JSON (org.json) ─────────── */
 
     private fun catAJson(c: Categoria) = JSONObject().apply {
@@ -275,14 +308,14 @@ object Store {
 
     private fun usuarioAJson(u: Usuario) = JSONObject().apply {
         put("id", u.id); put("nombre", u.nombre); put("avatar", u.avatar)
-        put("color", u.color); put("tema", u.tema)
+        put("color", u.color); put("tema", u.tema); put("actualizado", u.actualizado)
         put("categorias", JSONArray(u.categorias.map { catAJson(it) }))
         put("notas", JSONArray(u.notas.map { notaAJson(it) }))
     }
     private fun usuarioDeJson(o: JSONObject) = Usuario(
         id = o.getString("id"), nombre = o.getString("nombre"),
         avatar = o.optString("avatar", "🙂"), color = o.optString("color", "#4f6df5"),
-        tema = o.optString("tema", "claro"),
+        tema = o.optString("tema", "claro"), actualizado = o.optLong("actualizado", 0L),
         categorias = o.optJSONArray("categorias")?.let { ja -> (0 until ja.length()).map { catDeJson(ja.getJSONObject(it)) } } ?: emptyList(),
         notas = o.optJSONArray("notas")?.let { ja -> (0 until ja.length()).map { notaDeJson(ja.getJSONObject(it)) } } ?: emptyList(),
     )
@@ -298,3 +331,22 @@ object Store {
         return AppState(o.optInt("version", 1), o.optString("currentUserId", ""), users)
     }
 }
+
+/* ─────────── Sincronización con el servidor web ─────────── */
+
+object Sincronizacion {
+    /** POST JSON al servidor; devuelve el cuerpo de la respuesta. */
+    fun httpPost(url: String, cuerpo: String): String {
+        val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+        conn.requestMethod = "POST"
+        conn.connectTimeout = 4000
+        conn.readTimeout = 10000
+        conn.doOutput = true
+        conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+        conn.outputStream.use { it.write(cuerpo.toByteArray(Charsets.UTF_8)) }
+        val codigo = conn.responseCode
+        if (codigo !in 200..299) throw Exception("HTTP $codigo")
+        return conn.inputStream.bufferedReader().use { it.readText() }
+    }
+}
+

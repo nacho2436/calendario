@@ -99,6 +99,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.CircularProgressIndicator
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
@@ -1128,6 +1132,14 @@ fun PantallaUsuarios() {
             }
         }
         Spacer(Modifier.height(20.dp))
+        Text("🔄 Sincronización con el servidor",
+            style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(6.dp))
+        Text("Conecta esta app con el servidor de tu PC (misma red WiFi) para compartir las notas. En la web se sincroniza solo; aquí usa el botón.",
+            fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+        Spacer(Modifier.height(8.dp))
+        SeccionSincronizacion()
+        Spacer(Modifier.height(20.dp))
     }
 
     if (nuevo || editUser != null) {
@@ -1147,6 +1159,61 @@ fun PantallaUsuarios() {
     }
     confirmar?.let { (msg, accion) ->
         DialogoConfirmar(mensaje = msg, onSi = { accion(); confirmar = null }, onNo = { confirmar = null })
+    }
+}
+
+@Composable
+fun SeccionSincronizacion() {
+    val contexto = LocalContext.current
+    val prefs = remember { contexto.getSharedPreferences("calendario_colombia", android.content.Context.MODE_PRIVATE) }
+    var url by remember { mutableStateOf(prefs.getString("servidor", "") ?: "") }
+    var estado by remember { mutableStateOf("") }
+    var ocupado by remember { mutableStateOf(false) }
+    val alcance = rememberCoroutineScope()
+
+    Column {
+        OutlinedTextField(
+            value = url,
+            onValueChange = { url = it },
+            label = { Text("Servidor (http://IP-del-PC:8177)") },
+            placeholder = { Text("http://192.168.1.17:8177") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                onClick = {
+                    val destino = url.trim().trimEnd('/').removeSuffix("/api/sync")
+                    if (destino.isEmpty()){ estado = "Escribe la dirección del servidor"; return@Button }
+                    prefs.edit().putString("servidor", destino).apply()
+                    ocupado = true; estado = "Sincronizando…"
+                    alcance.launch {
+                        try {
+                            val respuesta = withContext(Dispatchers.IO) {
+                                Sincronizacion.httpPost("$destino/api/sync", Store.exportarUsuariosJson())
+                            }
+                            val cambios = Store.importarYFusionar(respuesta)
+                            estado = if (cambios > 0) "✔ Sincronizado ($cambios cambio/s del servidor)" else "✔ Sincronizado (sin cambios)"
+                        } catch (e: Exception) {
+                            estado = "✘ No se pudo conectar: ${e.message ?: "error"}"
+                        }
+                        ocupado = false
+                    }
+                },
+                enabled = !ocupado,
+            ) {
+                Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                Text(" Sincronizar ahora")
+            }
+            if (ocupado) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+            }
+        }
+        if (estado.isNotEmpty()) {
+            Text(estado, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 6.dp))
+        }
     }
 }
 
