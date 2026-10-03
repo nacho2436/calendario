@@ -84,6 +84,26 @@ reiniciar() {
   arrancar
 }
 
+codigo_vinculo() {
+  if ! servidor_arriba; then
+    echo -e "${AMARILLO}El servidor está detenido; arráncalo primero.${NORMAL}"
+    return
+  fi
+  curl -s --max-time 3 "http://localhost:8177/api/vinculacion" | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    m, s = divmod(d.get("expira_en", 0), 60)
+    print("  Código de vinculación: " + "=" * 30)
+    print("         %s" % d.get("codigo", "??????"))
+    print("  " + "=" * 30)
+    print("  Válido %d:%02d · escríbelo en la app Android:" % (m, s))
+    print("  Usuarios → Sincronización → Buscar servidor en la red")
+except Exception:
+    print("  (el servidor no respondio)")
+'
+}
+
 info() {
   if ! servidor_arriba; then
     echo -e "${AMARILLO}El servidor está detenido; arráncalo para ver la información.${NORMAL}"
@@ -123,16 +143,18 @@ while true; do
   echo -e "   ${AZUL}2)${NORMAL} ■  Detener el servidor"
   echo -e "   ${AZUL}3)${NORMAL} ↻  Reiniciar el servidor"
   echo -e "   ${AZUL}4)${NORMAL} ℹ  Ver información de los datos"
-  echo -e "   ${AZUL}5)${NORMAL} ✖  Salir del menú"
+  echo -e "   ${AZUL}5)${NORMAL} 🔗 Mostrar código para vincular el celular"
+  echo -e "   ${AZUL}6)${NORMAL} ✖  Salir del menú"
   echo
-  read -r -p "  Elige una opción [1-5]: " op
+  read -r -p "  Elige una opción [1-6]: " op
   case "$op" in
     1) arrancar ;;
     2) read -r -p "  ¿Detener el servidor? [s/N]: " r
        if [[ "$r" == "s" || "$r" == "S" ]]; then detener; else echo -e "${AMARILLO}Cancelado.${NORMAL}"; fi ;;
     3) reiniciar ;;
     4) info ;;
-    5) echo -e "${VERDE}¡Chao! 👋${NORMAL}"; exit 0 ;;
+    5) codigo_vinculo ;;
+    6) echo -e "${VERDE}¡Chao! 👋${NORMAL}"; exit 0 ;;
     *) echo -e "${ROJO}Opción no válida.${NORMAL}" ;;
   esac
   echo

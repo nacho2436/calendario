@@ -12,14 +12,18 @@
 # ============================================================
 import json
 import os
+import random
 import sqlite3
 import threading
 import time
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from socket import gethostbyname_ex, gethostname
+import socket as socket_red
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 PUERTO = 8177
+PUERTO_DESCUBRIMIENTO = 8178
 DB = os.path.join(BASE, 'datos', 'calendario.sqlite')
 os.makedirs(os.path.dirname(DB), exist_ok=True)
 CANDADO = threading.Lock()
@@ -166,6 +170,57 @@ def fusionar(entrantes, bajas_entrantes=None):
             return finales, _leer_bajas(con)
 
 
+ID_ARCHIVO = os.path.join(BASE, 'datos', 'id_servidor.txt')
+
+
+def id_servidor():
+    """Identificador persistente del servidor (para que el celular no
+    duplique el mismo servidor detectado por varias IP)."""
+    try:
+        with open(ID_ARCHIVO) as f:
+            v = f.read().strip()
+        if v:
+            return v
+    except OSError:
+        pass
+    v = uuid.uuid4().hex[:12]
+    with open(ID_ARCHIVO, 'w') as f:
+        f.write(v)
+    return v
+
+
+CANDADO_CODIGO = threading.Lock()
+CODIGO = {'codigo': None, 'expira': 0.0, 'usado': False}
+
+
+def generar_codigo():
+    with CANDADO_CODIGO:
+        CODIGO['codigo'] = ''.join(random.choices('0123456789', k=6))
+        CODIGO['expira'] = time.time() + 300      # válido 5 minutos
+        CODIGO['usado'] = False
+        return CODIGO['codigo'], CODIGO['expira']
+
+
+def hilo_descubrimiento():
+    """Responde por UDP a los celulares que buscan servidores en la red."""
+    try:
+        s = socket_red.socket(socket_red.AF_INET, socket_red.SOCK_DGRAM)
+        s.setsockopt(socket_red.SOL_SOCKET, socket_red.SO_REUSEADDR, 1)
+        s.bind(('', PUERTO_DESCUBRIMIENTO))
+    except Exception as e:
+        print(f'• Descubrimiento en red no disponible: {e}')
+        return
+    while True:
+        try:
+            datos, addr = s.recvfrom(1024)
+            if b'MICALENDARIO' in datos.upper():
+                resp = json.dumps({'app': 'micalendario', 'id': id_servidor(),
+                                   'nombre': gethostname(), 'puerto': PUERTO}).encode()
+                s.sendto(resp, addr)
+        except Exception:
+            pass
+
+
 class Manejador(BaseHTTPRequestHandler):
     server_version = 'MiCalendario/1.0'
 
@@ -188,6 +243,17 @@ class Manejador(BaseHTTPRequestHandler):
         ruta = self.path.split('?')[0]
         if ruta == '/api/ping':
             return self.json_({'ok': True, 'hora': int(time.time() * 1000)})
+        if ruta == '/api/vinculacion':
+            if 'nuevo=1' in (self.path.split('?')[1] if '?' in self.path else ''):
+                generar_codigo()
+            with CANDADO_CODIGO:
+                valido = (CODIGO['codigo'] and not CODIGO['usado']
+                          and CODIGO['expira'] > time.time())
+            if not valido:
+                generar_codigo()
+            with CANDADO_CODIGO:
+                return self.json_({'codigo': CODIGO['codigo'],
+                                   'expira_en': max(0, int(CODIGO['expira'] - time.time()))})
         if ruta == '/api/estado':
             with CANDADO:
                 with abrir_db() as con:
@@ -208,6 +274,24 @@ class Manejador(BaseHTTPRequestHandler):
 
     def do_POST(self):
         ruta = self.path.split('?')[0]
+        if ruta == '/api/vincular':
+            try:
+                largo = int(self.headers.get('Content-Length') or 0)
+                d = json.loads(self.rfile.read(largo) or b'{}')
+                with CANDADO_CODIGO:
+                    ok = (CODIGO['codigo'] == str(d.get('codigo', '')).strip()
+                          and not CODIGO['usado'] and CODIGO['expira'] > time.time())
+                    if ok:
+                        CODIGO['usado'] = True
+                if ok:
+                    with CANDADO_LOG:
+                        with open(os.path.join(BASE, 'datos', 'servidor.log'), 'a') as f:
+                            f.write(f'{time.strftime("%Y-%m-%d %H:%M:%S")} {self.client_address[0]} '
+                                    f'VINCULADO dispositivo={d.get("dispositivo", "?")}\n')
+                    return self.json_({'ok': True, 'servidor': gethostname(), 'puerto': PUERTO})
+                return self.json_({'ok': False, 'error': 'codigo incorrecto o expirado'}, 403)
+            except Exception as e:
+                return self.json_({'error': str(e)}, 400)
         if ruta != '/api/sync':
             return self.json_({'error': 'ruta desconocida'}, 404)
         try:
@@ -235,6 +319,7 @@ def ip_lan():
 
 
 if __name__ == '__main__':
+    threading.Thread(target=hilo_descubrimiento, daemon=True).start()
     srv = ThreadingHTTPServer(('0.0.0.0', PUERTO), Manejador)
     print(f'✔ Mi Calendario escuchando en el puerto {PUERTO}')
     print(f'   En este equipo : http://localhost:{PUERTO}')

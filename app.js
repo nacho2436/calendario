@@ -1165,6 +1165,31 @@ function manejarAccion(e){
   }
 }
 
+/* ─────────── Código de vinculación para el celular ─────────── */
+let timerCodigo = null;
+async function mostrarCodigo(renovar = false){
+  try{
+    const r = await fetch('/api/vinculacion' + (renovar ? '?nuevo=1' : ''), { cache: 'no-store' });
+    if (!r.ok) throw 0;
+    const d = await r.json();
+    $('#codigoVinculo').hidden = false;
+    $('#codigoTexto').textContent = d.codigo;
+    const fin = Date.now() + d.expira_en * 1000;
+    clearInterval(timerCodigo);
+    timerCodigo = setInterval(() => {
+      const s = Math.max(0, Math.round((fin - Date.now()) / 1000));
+      $('#codigoExpira').textContent = `expira en ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+      if (s <= 0){
+        clearInterval(timerCodigo);
+        $('#codigoVinculo').hidden = true;
+        toast('El código expiró · genera uno nuevo 🔗');
+      }
+    }, 500);
+  } catch {
+    toast('No se pudo pedir el código (¿funciona el servidor?)');
+  }
+}
+
 /* ─────────── 13. Inicialización ─────────── */
 async function inicializar(){
   $('#calWeekdays').innerHTML = DIAS_CORTOS.map(d => `<span>${d}</span>`).join('');
@@ -1270,6 +1295,10 @@ async function inicializar(){
   document.addEventListener('keydown', ev => { if (ev.key === 'Escape') cerrarUltimo(); });
 
   $('#avisoAceptar').addEventListener('click', mostrarSiguienteAviso);
+
+  /* código de vinculación */
+  $('#btnCodigo')?.addEventListener('click', () => mostrarCodigo());
+  $('#btnRenovar')?.addEventListener('click', () => mostrarCodigo(true));
 
   await conectarServidor();
   aplicarTema();

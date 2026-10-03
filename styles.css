@@ -655,3 +655,21 @@ label{font-size:.8rem;font-weight:600;color:var(--text-soft);display:block;margi
   .info-resumen{gap:6px;}
   .info-dato strong{font-size:1.05rem;}
 }
+
+/* ---------- Vincular celular ---------- */
+.card-vincular{
+  background:var(--surface);border:1px solid var(--border);border-radius:16px;
+  padding:16px 18px;box-shadow:var(--shadow);
+}
+.card-vincular .hint{margin:0 0 12px;font-size:.8rem;line-height:1.6;}
+.vincular-acciones{display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
+.codigo-vinculo{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+.codigo-digitos{
+  font-family:ui-monospace,'Cascadia Mono',Consolas,monospace;
+  font-size:2.1rem;font-weight:800;letter-spacing:.35em;
+  color:var(--accent);
+  background:color-mix(in srgb, var(--accent) 9%, var(--surface));
+  border:2px dashed color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius:12px;padding:6px 10px 6px 18px;
+}
+.codigo-expira{font-size:.75rem;font-weight:700;color:var(--muted);}

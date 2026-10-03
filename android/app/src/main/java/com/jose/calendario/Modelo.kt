@@ -412,6 +412,66 @@ object Store {
 /* ─────────── Sincronización con el servidor web ─────────── */
 
 object Sincronizacion {
+
+    data class ServidorEncontrado(val id: String, val nombre: String, val ip: String, val puerto: Int) {
+        val url: String get() = "http://$ip:$puerto"
+        val etiqueta: String get() = "Servidor de $nombre"
+    }
+
+    /** Busca servidores de Mi Calendario en la red local (broadcast UDP). */
+    fun buscarServidores(ms: Long = 4000): List<ServidorEncontrado> {
+        val vistos = LinkedHashMap<String, ServidorEncontrado>()
+        var socket: java.net.DatagramSocket? = null
+        try {
+            socket = java.net.DatagramSocket()
+            socket.broadcast = true
+            socket.soTimeout = 800
+            val mensaje = "MICALENDARIO_BUSCAR".toByteArray()
+            val destinos = ArrayList<java.net.InetAddress>()
+            destinos.add(java.net.InetAddress.getByName("255.255.255.255"))
+            try {
+                val interfaces = java.util.Collections.list(java.net.NetworkInterface.getNetworkInterfaces())
+                for (ni in interfaces) for (ia in ni.interfaceAddresses) {
+                    ia.broadcast?.let { destinos.add(it) }   // broadcast del subconjunto (más fiable)
+                }
+            } catch (_: Exception) {}
+            val buffer = ByteArray(512)
+            val fin = System.currentTimeMillis() + ms
+            while (System.currentTimeMillis() < fin) {
+                for (d in destinos) {
+                    try {
+                        socket.send(java.net.DatagramPacket(mensaje, mensaje.size, d, 8178))
+                    } catch (_: Exception) {}
+                }
+                try {
+                    val p = java.net.DatagramPacket(buffer, buffer.size)
+                    socket.receive(p)
+                    val json = org.json.JSONObject(String(p.data, 0, p.length))
+                    if (json.optString("app") == "micalendario") {
+                        val s = ServidorEncontrado(json.optString("id"), json.optString("nombre"),
+                            p.address.hostAddress ?: "", json.optInt("puerto", 8177))
+                        vistos[s.id] = s
+                    }
+                } catch (_: java.net.SocketTimeoutException) {}
+            }
+        } finally {
+            socket?.close()
+        }
+        return vistos.values.toList()
+    }
+
+    /** Valida el código de vinculación; lanza excepción si es incorrecto/expirado. */
+    fun vincular(baseUrl: String, codigo: String, dispositivo: String) {
+        val cuerpo = org.json.JSONObject()
+            .put("codigo", codigo.trim())
+            .put("dispositivo", dispositivo)
+            .toString()
+        val respuesta = httpPost("$baseUrl/api/vincular", cuerpo)
+        if (!org.json.JSONObject(respuesta).optBoolean("ok", false)) {
+            throw Exception("código incorrecto o expirado")
+        }
+    }
+
     /** Completa la dirección: "192.168.1.17:8177" → "http://192.168.1.17:8177". */
     fun normalizarUrl(entrada: String): String {
         var s = entrada.trim()

@@ -95,6 +95,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -1166,56 +1168,156 @@ fun PantallaUsuarios() {
 fun SeccionSincronizacion() {
     val contexto = LocalContext.current
     val prefs = remember { contexto.getSharedPreferences("calendario_colombia", android.content.Context.MODE_PRIVATE) }
-    var url by remember { mutableStateOf(prefs.getString("servidor", "") ?: "") }
+    var urlManual by remember { mutableStateOf(prefs.getString("servidor", "") ?: "") }
     var estado by remember { mutableStateOf("") }
     var ocupado by remember { mutableStateOf(false) }
+    var buscando by remember { mutableStateOf(false) }
+    var encontrados by remember { mutableStateOf(listOf<Sincronizacion.ServidorEncontrado>()) }
+    var elegido by remember { mutableStateOf<Sincronizacion.ServidorEncontrado?>(null) }
+    var codigo by remember { mutableStateOf("") }
     val alcance = rememberCoroutineScope()
+    val guardado = prefs.getString("servidor", null)
 
     Column {
-        OutlinedTextField(
-            value = url,
-            onValueChange = { url = it },
-            label = { Text("Servidor (http://IP-del-PC:8177 · el http:// puede omitirse)") },
-            placeholder = { Text("http://192.168.1.17:8177") },
-            singleLine = true,
+        if (guardado != null) {
+            Text("✔ Vinculado a: $guardado", fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(bottom = 8.dp))
+        }
+
+        // 1) buscar el servidor en la red
+        Button(
+            onClick = {
+                buscando = true; estado = "🔎 Buscando servidores en la red…"
+                encontrados = emptyList(); elegido = null
+                alcance.launch {
+                    val lista = withContext(Dispatchers.IO) { Sincronizacion.buscarServidores() }
+                    encontrados = lista
+                    buscando = false
+                    estado = when {
+                        lista.isEmpty() -> "No se encontró nada · ¿PC y celular en la misma red WiFi y el servidor encendido? (./menu.sh)"
+                        else -> "Elige tu servidor y escribe el código que muestra la web"
+                    }
+                }
+            },
+            enabled = !buscando && !ocupado,
             modifier = Modifier.fillMaxWidth(),
-        )
-        Spacer(Modifier.height(8.dp))
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ) {
+            Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(16.dp))
+            Text(if (buscando) " Buscando…" else " Buscar servidor en la red")
+        }
+
+        encontrados.forEach { s ->
+            val activo = elegido?.id == s.id
+            Surface(
+                onClick = { elegido = s },
+                shape = RoundedCornerShape(10.dp),
+                color = if (activo) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                        else MaterialTheme.colorScheme.surface,
+                border = BorderStroke(if (activo) 2.dp else 1.dp,
+                    if (activo) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.outlineVariant),
+                modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Filled.DateRange, contentDescription = null, modifier = Modifier.size(16.dp),
+                        tint = if (activo) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline)
+                    Spacer(Modifier.width(8.dp))
+                    Column {
+                        Text(s.etiqueta, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text(s.url, fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+                    }
+                }
+            }
+        }
+
+        // 2) código de vinculación
+        if (elegido != null) {
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = codigo,
+                onValueChange = { if (it.length <= 6) codigo = it.filter { c -> c.isDigit() } },
+                label = { Text("Código de 6 dígitos (lo muestra la web)") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(6.dp))
             Button(
                 onClick = {
-                    val destino = Sincronizacion.normalizarUrl(url).removeSuffix("/api/sync")
-                    if (destino.isEmpty()){ estado = "Escribe la dirección del servidor"; return@Button }
-                    ocupado = true; estado = "Sincronizando…"
+                    val servidor = elegido
+                    if (servidor == null || codigo.length < 6) {
+                        estado = "Escribe el código completo que muestra la web"
+                        return@Button
+                    }
+                    ocupado = true; estado = "Vinculando…"
                     alcance.launch {
                         try {
+                            withContext(Dispatchers.IO) {
+                                Sincronizacion.vincular(servidor.url, codigo, android.os.Build.MODEL ?: "Android")
+                            }
                             val respuesta = withContext(Dispatchers.IO) {
-                                Sincronizacion.httpPost("$destino/api/sync", Store.exportarUsuariosJson())
+                                Sincronizacion.httpPost("${servidor.url}/api/sync", Store.exportarUsuariosJson())
                             }
                             val cambios = Store.importarYFusionar(respuesta)
-                            // la dirección se guarda solo si la conexión funcionó
-                            prefs.edit().putString("servidor", destino).apply()
-                            estado = if (cambios > 0) "✔ Sincronizado ($cambios cambio/s) · dirección guardada"
-                                     else "✔ Sincronizado (sin cambios) · dirección guardada"
+                            prefs.edit().putString("servidor", servidor.url).apply()
+                            estado = "✔ Vinculado a ${servidor.nombre} · sincronizado ($cambios cambio/s)"
+                            codigo = ""
                         } catch (e: Exception) {
-                            estado = "✘ No se pudo conectar: ${e.message ?: "error"} (la dirección no se guardó)"
+                            estado = if (e.message?.contains("403") == true || e.message?.contains("código") == true)
+                                "✘ Código incorrecto o expirado · pide uno nuevo en la web"
+                            else "✘ ${e.message ?: "error de conexión"}"
                         }
                         ocupado = false
                     }
                 },
                 enabled = !ocupado,
-            ) {
-                Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                Text(" Sincronizar ahora")
-            }
-            if (ocupado) {
-                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-            }
+            ) { Text("🔗 Vincular y sincronizar") }
         }
+
+        // 3) sincronizar de nuevo con lo ya vinculado
+        if (guardado != null) {
+            Spacer(Modifier.height(6.dp))
+            OutlinedButton(
+                onClick = {
+                    ocupado = true; estado = "Sincronizando…"
+                    alcance.launch {
+                        try {
+                            val respuesta = withContext(Dispatchers.IO) {
+                                Sincronizacion.httpPost("$guardado/api/sync", Store.exportarUsuariosJson())
+                            }
+                            val cambios = Store.importarYFusionar(respuesta)
+                            estado = if (cambios > 0) "✔ Sincronizado ($cambios cambio/s)" else "✔ Sincronizado (sin cambios)"
+                        } catch (e: Exception) {
+                            estado = "✘ ${e.message ?: "no se pudo conectar"}"
+                        }
+                        ocupado = false
+                    }
+                },
+                enabled = !ocupado,
+            ) { Text("↻ Sincronizar ahora") }
+        }
+
         if (estado.isNotEmpty()) {
             Text(estado, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 6.dp))
+                modifier = Modifier.padding(top = 8.dp))
         }
+
+        // alternativa manual
+        Spacer(Modifier.height(10.dp))
+        Text("— o escribe la dirección manualmente —", fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.outline)
+        Spacer(Modifier.height(6.dp))
+        OutlinedTextField(
+            value = urlManual,
+            onValueChange = { urlManual = it },
+            label = { Text("http://IP-del-PC:8177") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 
