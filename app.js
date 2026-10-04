@@ -342,6 +342,7 @@ function diasEntre(a, b){
 }
 function ocurreEn(nota, key){
   if (!nota.repeticion) return nota.fecha === key;
+  if (nota.excluidas?.includes(key)) return false;   // ocurrencia eliminada por separado
   if (key < nota.fecha) return false;
   const [ny, nm, nd] = nota.fecha.split('-').map(Number);
   const [y, m, d] = key.split('-').map(Number);
@@ -365,6 +366,8 @@ function proximaFecha(nota){
   return nota.fecha;
 }
 const notasQueOcurren = key => yo().notas.filter(n => ocurreEn(n, key));
+/** ¿La nota está tachada para esa fecha? (las repetitivas se tachan por día) */
+const hechaEn = (n, fecha) => n.repeticion ? !!n.hechas?.[fecha] : !!n.done;
 
 /* ─────────── Notificaciones antes de la nota ───────────
    Cada nota puede tener varios avisos (minutos antes). Mientras la
@@ -632,7 +635,7 @@ function htmlCelda(d, otroMes, maxLineas, recortarFestivo = false){
     </div>`;
   }
   const lineas = notas.slice(0, cupo).map(n => `
-      <div class="day-note${n.done ? ' done' : ''}" style="--c:${colorDe(n)}" title="${esc(n.titulo)}">
+      <div class="day-note${hechaEn(n, key) ? ' done' : ''}" style="--c:${colorDe(n)}" title="${esc(n.titulo)}">
         <i></i><span>${n.repeticion ? '🔁 ' : ''}${esc(n.titulo)}</span>
       </div>`).join('');
   const extra  = notas.length > cupo ? `<span class="more">+${notas.length - cupo} más</span>` : '';
@@ -704,7 +707,7 @@ function renderVistaInfografia(){
         <div class="info-contenido">
           <div class="info-fecha">${esc(etiqueta)}${festivo ? ` <span class="holiday-badge">🎉 ${esc(festivo)}</span>` : ''}</div>
           ${notas.map(n => `
-            <div class="info-nota${n.done ? ' done' : ''}" style="--c:${colorDe(n)}">
+            <div class="info-nota${hechaEn(n, key) ? ' done' : ''}" style="--c:${colorDe(n)}">
               <i></i>
               <span class="t">${n.repeticion ? '🔁 ' : ''}${esc(n.titulo)}</span>
               <span class="meta">${n.hora ? '⏰ ' + fmtHora(n.hora) : ''}${n.repeticion ? ' ' + REP_CORTO[n.repeticion] : ''}${n.avisos?.length ? ' 🔔' : ''}</span>
@@ -738,7 +741,7 @@ function renderVistaDia(){
     </div>
     <div class="dia-lista">
       ${notas.length
-        ? notas.map(n => notaCardHTML(n, { conFecha: false })).join('')
+        ? notas.map(n => notaCardHTML(n, { conFecha: false, fecha: key })).join('')
         : '<div class="empty">Sin notas este día.<br>¡Agrega una! 📝</div>'}
     </div>`;
 }
@@ -767,19 +770,21 @@ function renderNotas(){
       claveAnterior = cuando;
       html += `<h3 class="date-group">${esc(fmtFechaLarga(cuando))}</h3>`;
     }
-    html += notaCardHTML(n, { conFecha: false });
+    html += notaCardHTML(n, { conFecha: false, fecha: cuando });
   }
   cont.innerHTML = html;
 }
 
-function notaCardHTML(n, { conFecha = true } = {}){
+function notaCardHTML(n, { conFecha = true, fecha = null } = {}){
+  const f = fecha || n.fecha;
+  const hecha = hechaEn(n, f);
   const cat = catDe(n);
   const colorCat = cat?.color || '#8d99ae';
   const nombreCat = cat?.nombre || 'Sin categoría';
   return `
-  <article class="note-card${n.done ? ' done' : ''}" style="--nc:${colorDe(n)}">
-    <button class="note-check" data-action="toggle-nota" data-id="${n.id}"
-            title="${n.done ? 'Marcar como pendiente' : 'Marcar como completada'}">${n.done ? '✓' : ''}</button>
+  <article class="note-card${hecha ? ' done' : ''}" style="--nc:${colorDe(n)}">
+    <button class="note-check" data-action="toggle-nota" data-id="${n.id}" data-fecha="${f}"
+            title="${hecha ? 'Marcar como pendiente' : 'Marcar como completada'}">${hecha ? '✓' : ''}</button>
     <div class="note-main">
       <div class="note-top">
         <h4>${esc(n.titulo)}</h4>
@@ -790,7 +795,7 @@ function notaCardHTML(n, { conFecha = true } = {}){
     </div>
     <div class="note-actions">
       <button class="btn icon" data-action="edit-nota" data-id="${n.id}" title="Editar nota">✏️</button>
-      <button class="btn icon" data-action="del-nota" data-id="${n.id}" title="Eliminar nota">🗑️</button>
+      <button class="btn icon" data-action="del-nota" data-id="${n.id}" data-fecha="${f}" title="Eliminar nota">🗑️</button>
     </div>
   </article>`;
 }
@@ -947,8 +952,19 @@ function pintarModalDia(){
   $('#dayModalTitle').innerHTML =
     `${esc(fmtFechaLarga(ui.dayKey))}${festivo ? ` <span class="holiday-badge">🎉 ${esc(festivo)}</span>` : ''}`;
   $('#dayNotes').innerHTML = lista.length
-    ? lista.map(n => notaCardHTML(n, { conFecha: false })).join('')
+    ? lista.map(n => notaCardHTML(n, { conFecha: false, fecha: ui.dayKey })).join('')
     : '<p class="empty-sm">Sin notas este día. ¡Agrega una! 📝</p>';
+}
+
+/* Modal de opciones (dos caminos) */
+let elegirCb = null;
+function elegirOpciones(titulo, texto, t1, t2, cb1, cb2){
+  $('#elegirTitulo').textContent = titulo;
+  $('#elegirTexto').textContent = texto;
+  $('#elegirOpc1').textContent = t1;
+  $('#elegirOpc2').textContent = t2;
+  elegirCb = { cb1, cb2 };
+  abrirModal('modal-elegir');
 }
 
 /* Modal confirmación */
@@ -1039,27 +1055,50 @@ function eliminarCategoria(id){
     });
 }
 
-function toggleNota(id){
+function toggleNota(id, fecha = null){
   const n = yo().notas.find(x => x.id === id);
   if (!n) return;
-  n.done = !n.done;
+  if (n.repeticion && fecha){
+    n.hechas = n.hechas || {};
+    if (n.hechas[fecha]) delete n.hechas[fecha];
+    else n.hechas[fecha] = Date.now();
+  } else {
+    n.done = !n.done;
+  }
   guardar();
   refrescarTrasCambio();
 }
 
-function eliminarNota(id){
-  confirmar('¿Eliminar esta nota? Esta acción no se puede deshacer.', () => {
-    const u = yo();
-    const nota = u.notas.find(n => n.id === id);
-    if (nota){
-      u.notasEliminadas = u.notasEliminadas || [];
-      u.notasEliminadas.push({ id: nota.id, titulo: nota.titulo, fecha: nota.fecha, ts: Date.now() });
-    }
-    u.notas = u.notas.filter(n => n.id !== id);
-    guardar();
-    refrescarTrasCambio();
-    toast('Nota eliminada 🗑️');
-  });
+function eliminarNota(id, fecha = null){
+  const n = yo().notas.find(x => x.id === id);
+  if (!n) return;
+  if (n.repeticion && fecha){
+    elegirOpciones('Nota repetitiva',
+      `"${n.titulo}" se repite ${REP_CORTO[n.repeticion]}. ¿Qué quieres eliminar?`,
+      'Solo este día', 'Toda la serie',
+      () => {                       // solo la ocurrencia de ese día
+        if (!n.excluidas?.includes(fecha)) n.excluidas = [...(n.excluidas || []), fecha];
+        if (n.hechas) delete n.hechas[fecha];
+        guardar(); refrescarTrasCambio();
+        toast('Ocurrencia eliminada 🗑️');
+      },
+      () => borrarNotaDefinitiva(id));
+    return;
+  }
+  confirmar('¿Eliminar esta nota? Esta acción no se puede deshacer.',
+    () => borrarNotaDefinitiva(id));
+}
+function borrarNotaDefinitiva(id){
+  const u = yo();
+  const nota = u.notas.find(n => n.id === id);
+  if (nota){
+    u.notasEliminadas = u.notasEliminadas || [];
+    u.notasEliminadas.push({ id: nota.id, titulo: nota.titulo, fecha: nota.fecha, ts: Date.now() });
+  }
+  u.notas = u.notas.filter(n => n.id !== id);
+  guardar();
+  refrescarTrasCambio();
+  toast('Nota eliminada 🗑️');
 }
 
 function guardarUsuario(e){
@@ -1176,8 +1215,8 @@ function manejarAccion(e){
     case 'del-cat':  eliminarCategoria(id); break;
     case 'new-note': abrirModalNota(null, todayKey()); break;
     case 'edit-nota': abrirModalNota(yo().notas.find(n => n.id === id)); break;
-    case 'del-nota':  eliminarNota(id); break;
-    case 'toggle-nota': toggleNota(id); break;
+    case 'del-nota':  eliminarNota(id, btn.dataset.fecha); break;
+    case 'toggle-nota': toggleNota(id, btn.dataset.fecha); break;
     case 'new-user':  abrirModalUser(); break;
     case 'edit-user': abrirModalUser(state.users.find(u => u.id === id)); break;
     case 'use-user':  usarUsuario(id); break;
@@ -1316,6 +1355,16 @@ async function inicializar(){
   document.addEventListener('keydown', ev => { if (ev.key === 'Escape') cerrarUltimo(); });
 
   $('#avisoAceptar').addEventListener('click', mostrarSiguienteAviso);
+
+  /* opciones de notas repetitivas */
+  $('#elegirOpc1').addEventListener('click', () => {
+    cerrarModal($('#modal-elegir'));
+    const c = elegirCb?.cb1; elegirCb = null; c && c();
+  });
+  $('#elegirOpc2').addEventListener('click', () => {
+    cerrarModal($('#modal-elegir'));
+    const c = elegirCb?.cb2; elegirCb = null; c && c();
+  });
 
   /* código de vinculación */
   $('#btnCodigo')?.addEventListener('click', () => mostrarCodigo());

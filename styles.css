@@ -673,3 +673,6 @@ label{font-size:.8rem;font-weight:600;color:var(--text-soft);display:block;margi
   border-radius:12px;padding:6px 10px 6px 18px;
 }
 .codigo-expira{font-size:.75rem;font-weight:700;color:var(--muted);}
+
+/* Diálogo de opciones (eliminar nota repetitiva) */
+.elegir-opciones{flex-direction:column;gap:8px;margin-top:16px;}

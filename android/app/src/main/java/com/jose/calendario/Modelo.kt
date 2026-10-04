@@ -24,6 +24,8 @@ data class Nota(
     val repeticion: String = "",       // "" | diaria | semanal | mensual | anual
     val avisos: List<Int> = emptyList(), // minutos antes (varios)
     val done: Boolean = false,
+    val hechas: Map<String, Long> = emptyMap(),   // tachadas por fecha (repetitivas)
+    val excluidas: List<String> = emptyList(),    // ocurrencias eliminadas por separado
     val creada: Long = System.currentTimeMillis(),
 )
 
@@ -69,6 +71,7 @@ object Repeticiones {
     fun ocurreEn(n: Nota, fecha: LocalDate): Boolean {
         val inicio = try { LocalDate.parse(n.fecha) } catch (e: Exception) { return false }
         if (n.repeticion.isEmpty()) return inicio == fecha
+        if (n.excluidas.contains(fecha.toString())) return false   // ocurrencia eliminada por separado
         if (fecha.isBefore(inicio)) return false
         return when (n.repeticion) {
             "diaria" -> true
@@ -107,6 +110,10 @@ object AvisosDef {
     }
     fun corto(min: Int) = OPCIONES.firstOrNull { it.first == min }?.second ?: "$min min"
 }
+
+/** ¿La nota está tachada para esa fecha? (las repetitivas se tachan por día) */
+fun notaHechaEn(n: Nota, fecha: String): Boolean =
+    if (n.repeticion.isNotEmpty()) n.hechas.containsKey(fecha) else n.done
 
 /** Hora guardada en 24 h, mostrada en 12 h con am/pm. */
 fun fmtHora(hora: String): String {
@@ -168,9 +175,28 @@ object Store {
         guardar()
     }
 
-    fun alternarNota(id: String) {
+    fun alternarNota(id: String, fecha: String = "") {
         val usr = usuario
-        app = conUsuario(usr.copy(notas = usr.notas.map { if (it.id == id) it.copy(done = !it.done) else it }))
+        app = conUsuario(usr.copy(notas = usr.notas.map {
+            if (it.id == id) {
+                if (it.repeticion.isNotEmpty() && fecha.isNotEmpty()) {
+                    val nuevas = it.hechas.toMutableMap()
+                    if (nuevas.containsKey(fecha)) nuevas.remove(fecha)
+                    else nuevas[fecha] = System.currentTimeMillis()
+                    it.copy(hechas = nuevas)
+                } else it.copy(done = !it.done)
+            } else it
+        }))
+        guardar()
+    }
+
+    /** Elimina solo la ocurrencia de ese día de una nota repetitiva. */
+    fun excluirOcurrencia(id: String, fecha: String) {
+        val usr = usuario
+        app = conUsuario(usr.copy(notas = usr.notas.map {
+            if (it.id == id) it.copy(excluidas = (it.excluidas + fecha).distinct(), hechas = it.hechas - fecha)
+            else it
+        }))
         guardar()
     }
 
@@ -400,6 +426,10 @@ object Store {
         put("hora", n.hora); put("catId", n.catId); put("color", n.color)
         put("repeticion", n.repeticion); put("avisos", JSONArray(n.avisos))
         put("done", n.done); put("creada", n.creada)
+        val hechasJson = JSONObject()
+        n.hechas.forEach { (k, v) -> hechasJson.put(k, v) }
+        put("hechas", hechasJson)
+        put("excluidas", JSONArray(n.excluidas))
     }
     private fun notaDeJson(o: JSONObject) = Nota(
         id = o.getString("id"), titulo = o.getString("titulo"),
@@ -408,6 +438,14 @@ object Store {
         color = o.optString("color", ""), repeticion = o.optString("repeticion", ""),
         avisos = o.optJSONArray("avisos")?.let { ja -> (0 until ja.length()).map { ja.optInt(it) } } ?: emptyList(),
         done = o.optBoolean("done", false),
+        hechas = o.optJSONObject("hechas")?.let { h ->
+            val m = HashMap<String, Long>()
+            h.keys().forEach { k -> m[k] = h.optLong(k, 0L) }
+            m
+        } ?: emptyMap(),
+        excluidas = o.optJSONArray("excluidas")?.let { ja ->
+            (0 until ja.length()).map { ja.optString(it) }.filter { it.isNotEmpty() }
+        } ?: emptyList(),
         creada = o.optLong("creada", System.currentTimeMillis()),
     )
 

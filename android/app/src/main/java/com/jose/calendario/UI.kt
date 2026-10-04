@@ -275,9 +275,14 @@ fun PantallaCalendario(sn: SnackbarHostState) {
     var catEdit by remember { mutableStateOf<Categoria?>(null) }
     var nuevaCat by remember { mutableStateOf(false) }
     var gestionCats by remember { mutableStateOf(false) }
+    var eliminarRepetida by remember { mutableStateOf<Pair<Nota, String>?>(null) }
     var confirmar by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
     val alc = rememberCoroutineScope()
     fun aviso(m: String) { alc.launch { sn.showSnackbar(m) } }
+    fun pedirEliminarNota(n: Nota, f: String){
+        if (n.repeticion.isNotEmpty()) eliminarRepetida = n to f
+        else confirmar = "¿Eliminar la nota \"${n.titulo}\"?" to { Store.borrarNota(n.id); aviso("Nota eliminada 🗑️") }
+    }
 
     val u = Store.usuario
     val mesBase = YearMonth.from(Ui.fechaBase)
@@ -368,10 +373,8 @@ fun PantallaCalendario(sn: SnackbarHostState) {
             "hoy" -> VistaDia(
                 onNuevaNota = { nuevaFecha = Ui.fechaBase.toString() },
                 onEditar = { notaEdit = it },
-                onEliminar = { n ->
-                    confirmar = "¿Eliminar la nota \"${n.titulo}\"?" to { Store.borrarNota(n.id); aviso("Nota eliminada 🗑️") }
-                },
-                onAlternar = { Store.alternarNota(it) },
+                onEliminar = { n, f -> pedirEliminarNota(n, f) },
+                onAlternar = { id, f -> Store.alternarNota(id, f) },
             )
             "infografia" -> VistaInfografia(
                 onNuevaNota = { nuevaFecha = LocalDate.now().toString() },
@@ -461,12 +464,8 @@ fun PantallaCalendario(sn: SnackbarHostState) {
             onCerrar = { diaAbierto = null },
             onAgregar = { nuevaFecha = key; diaAbierto = null },
             onEditar = { notaEdit = it },
-            onToggle = { Store.alternarNota(it) },
-            onEliminar = { n ->
-                confirmar = "¿Eliminar la nota \"${n.titulo}\"?" to {
-                    Store.borrarNota(n.id); aviso("Nota eliminada 🗑️")
-                }
-            },
+            onToggle = { id, f -> Store.alternarNota(id, f) },
+            onEliminar = { n, f -> pedirEliminarNota(n, f) },
         )
     }
     if (gestionCats) {
@@ -486,6 +485,12 @@ fun PantallaCalendario(sn: SnackbarHostState) {
                 nuevaCat = false; catEdit = null
             },
         )
+    }
+    eliminarRepetida?.let { (n, f) ->
+        DialogoEliminarRepetida(nota = n,
+            onCerrar = { eliminarRepetida = null },
+            onSoloDia = { Store.excluirOcurrencia(n.id, f); eliminarRepetida = null; aviso("Ocurrencia eliminada 🗑️") },
+            onSerie = { Store.borrarNota(n.id); eliminarRepetida = null; aviso("Serie eliminada 🗑️") })
     }
     confirmar?.let { (msg, accion) ->
         DialogoConfirmar(mensaje = msg, onSi = { accion(); confirmar = null }, onNo = { confirmar = null })
@@ -536,7 +541,7 @@ fun SelectorVista(modifier: Modifier = Modifier) {
 
 /** Píldora compacta de nota (título de color sobre fondo tenue). */
 @Composable
-fun PildoraNota(n: Nota, pequeña: Boolean) {
+fun PildoraNota(n: Nota, pequeña: Boolean, hecha: Boolean = false) {
     // letra blanca en negrita sobre el color sólido (ligeramente oscurecido
     // para que el blanco siempre tenga contraste, incluso en amarillos)
     val fondo = lerp(colorDeNota(n), Color.Black, 0.25f)
@@ -549,9 +554,9 @@ fun PildoraNota(n: Nota, pequeña: Boolean) {
         overflow = TextOverflow.Ellipsis,
         color = Color.White,
         fontWeight = FontWeight.Bold,
-        textDecoration = if (n.done) TextDecoration.LineThrough else null,
+        textDecoration = if (hecha) TextDecoration.LineThrough else null,
         modifier = Modifier
-            .alpha(if (n.done) 0.55f else 1f)
+            .alpha(if (hecha) 0.55f else 1f)
             .background(fondo, RoundedCornerShape(4.dp))
             .padding(horizontal = 4.dp, vertical = 2.dp)
             .fillMaxWidth(),
@@ -624,7 +629,7 @@ fun CeldaDia(
                 )
             }
             Spacer(Modifier.weight(1f))
-            notas.take(maxPildoras).forEach { PildoraNota(it, pequeña) }
+            notas.take(maxPildoras).forEach { PildoraNota(it, pequeña, notaHechaEn(it, fecha.toString())) }
             if (notas.size > maxPildoras) {
                 Text(
                     "+${notas.size - maxPildoras} más",
@@ -642,8 +647,8 @@ fun CeldaDia(
 fun VistaDia(
     onNuevaNota: () -> Unit,
     onEditar: (Nota) -> Unit,
-    onEliminar: (Nota) -> Unit,
-    onAlternar: (String) -> Unit,
+    onEliminar: (Nota, String) -> Unit,
+    onAlternar: (String, String) -> Unit,
 ) {
     val festivo = Festivos.nombre(Ui.fechaBase.toString())
     val notas = notasQueOcurren(Ui.fechaBase)
@@ -684,10 +689,10 @@ fun VistaDia(
             LazyColumn(Modifier.weight(1f)) {
                 items(notas, key = { it.id }) { n ->
                     TarjetaNota(
-                        n = n, compacta = true,
+                        n = n, compacta = true, fecha = Ui.fechaBase.toString(),
                         onEditar = { onEditar(n) },
-                        onEliminar = { onEliminar(n) },
-                        onAlternar = { onAlternar(n.id) },
+                        onEliminar = { onEliminar(n, Ui.fechaBase.toString()) },
+                        onAlternar = { onAlternar(n.id, Ui.fechaBase.toString()) },
                     )
                 }
             }
@@ -803,7 +808,7 @@ fun VistaInfografia(
                                 Text("🎉 $festivo", color = rojo, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             }
                             Spacer(Modifier.height(6.dp))
-                            notas.forEach { n -> FilaInfografia(n) }
+                            notas.forEach { n -> FilaInfografia(n, fecha.toString()) }
                         }
                     }
                 }
@@ -813,7 +818,7 @@ fun VistaInfografia(
 }
 
 @Composable
-fun FilaInfografia(n: Nota) {
+fun FilaInfografia(n: Nota, fecha: String = "") {
     val c = colorDeNota(n)
     Surface(
         shape = RoundedCornerShape(10.dp),
@@ -831,7 +836,7 @@ fun FilaInfografia(n: Nota) {
                 (if (n.repeticion.isNotEmpty()) "🔁 " else "") + n.titulo,
                 fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
-                textDecoration = if (n.done) TextDecoration.LineThrough else null,
+                textDecoration = if (notaHechaEn(n, fecha)) TextDecoration.LineThrough else null,
                 modifier = Modifier.weight(1f, fill = false),
             )
             Spacer(Modifier.width(6.dp))
@@ -854,6 +859,7 @@ fun PantallaNotas(sn: SnackbarHostState) {
     var notaEdit by remember { mutableStateOf<Nota?>(null) }
     var nueva by remember { mutableStateOf(false) }
     var confirmar by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
+    var eliminarRepetida by remember { mutableStateOf<Pair<Nota, String>?>(null) }
     val alc = rememberCoroutineScope()
     fun aviso(m: String) { alc.launch { sn.showSnackbar(m) } }
 
@@ -928,15 +934,17 @@ fun PantallaNotas(sn: SnackbarHostState) {
                     )
                 }
                 items(lista, key = { it.id }) { n ->
+                    val fechaN = Repeticiones.proximaFecha(n).toString()
                     TarjetaNota(
-                        n = n,
+                        n = n, fecha = fechaN,
                         onEditar = { notaEdit = n },
                         onEliminar = {
-                            confirmar = "¿Eliminar la nota \"${n.titulo}\"?" to {
+                            if (n.repeticion.isNotEmpty()) eliminarRepetida = n to fechaN
+                            else confirmar = "¿Eliminar la nota \"${n.titulo}\"?" to {
                                 Store.borrarNota(n.id); aviso("Nota eliminada 🗑️")
                             }
                         },
-                        onAlternar = { Store.alternarNota(n.id) },
+                        onAlternar = { Store.alternarNota(n.id, fechaN) },
                     )
                 }
             }
@@ -953,13 +961,37 @@ fun PantallaNotas(sn: SnackbarHostState) {
             onCerrar = { nueva = false },
             onGuardar = { Store.guardarNota(it, null); nueva = false; aviso("Nota creada 📝") })
     }
+    eliminarRepetida?.let { (n, f) ->
+        DialogoEliminarRepetida(nota = n,
+            onCerrar = { eliminarRepetida = null },
+            onSoloDia = { Store.excluirOcurrencia(n.id, f); eliminarRepetida = null; aviso("Ocurrencia eliminada 🗑️") },
+            onSerie = { Store.borrarNota(n.id); eliminarRepetida = null; aviso("Serie eliminada 🗑️") })
+    }
     confirmar?.let { (msg, accion) ->
         DialogoConfirmar(mensaje = msg, onSi = { accion(); confirmar = null }, onNo = { confirmar = null })
     }
 }
 
 @Composable
-fun TarjetaNota(n: Nota, compacta: Boolean = false, onEditar: () -> Unit, onEliminar: () -> Unit, onAlternar: () -> Unit) {
+fun DialogoEliminarRepetida(nota: Nota, onCerrar: () -> Unit, onSoloDia: () -> Unit, onSerie: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onCerrar,
+        title = { Text("Nota repetitiva") },
+        text = { Text("\"${nota.titulo}\" se repite. ¿Qué quieres eliminar?") },
+        confirmButton = { TextButton(onClick = onSoloDia) { Text("Solo este día") } },
+        dismissButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = onSerie) { Text("Toda la serie", color = MaterialTheme.colorScheme.error) }
+                TextButton(onClick = onCerrar) { Text("Cancelar") }
+            }
+        },
+    )
+}
+
+@Composable
+fun TarjetaNota(n: Nota, compacta: Boolean = false, fecha: String = "", onEditar: () -> Unit, onEliminar: () -> Unit, onAlternar: () -> Unit) {
+    val f = if (fecha.isEmpty()) n.fecha else fecha
+    val hecha = notaHechaEn(n, f)
     val cat = Store.usuario.categorias.find { it.id == n.catId }
     val colorCat = cat?.let { hex(it.color) } ?: Color(0xFF8D99AE)
     val colorNota = colorDeNota(n)
@@ -986,12 +1018,12 @@ fun TarjetaNota(n: Nota, compacta: Boolean = false, onEditar: () -> Unit, onElim
             ) {
                 Box(
                     modifier = Modifier.size(26.dp)
-                        .background(if (n.done) ok else Color.Transparent, CircleShape)
-                        .border(2.dp, if (n.done) ok else MaterialTheme.colorScheme.outline, CircleShape)
+                        .background(if (hecha) ok else Color.Transparent, CircleShape)
+                        .border(2.dp, if (hecha) ok else MaterialTheme.colorScheme.outline, CircleShape)
                         .clickable { onAlternar() },
                     contentAlignment = Alignment.Center,
                 ) {
-                    if (n.done) Icon(Icons.Filled.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
+                    if (hecha) Icon(Icons.Filled.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
                 }
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
@@ -1001,8 +1033,8 @@ fun TarjetaNota(n: Nota, compacta: Boolean = false, onEditar: () -> Unit, onElim
                             modifier = Modifier.weight(1f, fill = false),
                             fontWeight = FontWeight.SemiBold,
                             style = MaterialTheme.typography.bodyMedium,
-                            textDecoration = if (n.done) TextDecoration.LineThrough else null,
-                            color = if (n.done) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurface,
+                            textDecoration = if (hecha) TextDecoration.LineThrough else null,
+                            color = if (hecha) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurface,
                         )
                         Spacer(Modifier.width(6.dp))
                         Text(
@@ -1684,8 +1716,8 @@ fun DialogoDia(
     onCerrar: () -> Unit,
     onAgregar: () -> Unit,
     onEditar: (Nota) -> Unit,
-    onToggle: (String) -> Unit,
-    onEliminar: (Nota) -> Unit,
+    onToggle: (String, String) -> Unit,
+    onEliminar: (Nota, String) -> Unit,
 ) {
     val festivo = Festivos.nombre(fecha)
     val notas = notasQueOcurren(LocalDate.parse(fecha))
@@ -1710,10 +1742,10 @@ fun DialogoDia(
                 } else {
                     notas.forEach { n ->
                         TarjetaNota(
-                            n = n, compacta = true,
+                            n = n, compacta = true, fecha = fecha,
                             onEditar = { onEditar(n) },
-                            onEliminar = { onEliminar(n) },
-                            onAlternar = { onToggle(n.id) },
+                            onEliminar = { onEliminar(n, fecha) },
+                            onAlternar = { onToggle(n.id, fecha) },
                         )
                     }
                 }

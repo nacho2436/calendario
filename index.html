@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=12">
+<link rel="stylesheet" href="styles.css?v=13">
 </head>
 <body data-theme="claro">
 <div class="app">
@@ -269,6 +269,19 @@
   </div>
 </div>
 
+<!-- ══════════ MODAL: ELEGIR OPCIÓN ══════════ -->
+<div class="modal-overlay" id="modal-elegir">
+  <div class="modal modal-sm">
+    <h3 id="elegirTitulo">Elegir</h3>
+    <p class="confirm-msg" id="elegirTexto"></p>
+    <div class="modal-actions elegir-opciones">
+      <button class="btn primary block" id="elegirOpc1">Solo este día</button>
+      <button class="btn danger block" id="elegirOpc2">Toda la serie</button>
+      <button class="btn block" data-close>Cancelar</button>
+    </div>
+  </div>
+</div>
+
 <!-- ══════════ MODAL: CONFIRMAR ══════════ -->
 <div class="modal-overlay" id="modal-confirm">
   <div class="modal modal-sm">
@@ -283,6 +296,6 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="app.js?v=12"></script>
+<script src="app.js?v=13"></script>
 </body>
 </html>
