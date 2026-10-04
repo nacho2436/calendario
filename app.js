@@ -912,18 +912,24 @@ function pintarCompartir(){
 function getCompartir(){
   return $$('#noteCompartir .aviso-chip.selected').map(c => c.dataset.user);
 }
-/** Copia la nota para otros usuarios y propaga ediciones de las compartidas. */
+/** Copia la nota para otros usuarios y propaga ediciones de las compartidas.
+    Sube el "actualizado" de los usuarios tocados: el servidor solo toma una
+    nota existente (por id) del documento más nuevo, sin esto las ediciones
+    propagadas se perderían al sincronizar. */
 function propagarNota(nota){
   for (const u of state.users){
     if (u.id === state.currentUserId) continue;
+    let toco = false;
     for (const copia of u.notas){
       if (copia.origenId === nota.origenId && copia.id !== nota.id){
         Object.assign(copia, {
           titulo: nota.titulo, desc: nota.desc, fecha: nota.fecha, hora: nota.hora,
           repeticion: nota.repeticion, avisos: nota.avisos, color: nota.color,
         });
+        toco = true;
       }
     }
+    if (toco) u.actualizado = Date.now();
   }
 }
 
@@ -1046,6 +1052,7 @@ function guardarNota(e){
       if (!otro) continue;
       otro.notas.push({ id: uid('note'), done: false, hechas: {}, excluidas: [], creada: Date.now(),
         ...datos, catId: catIdPorNombre(otro, catDe(datos)?.nombre) });
+      otro.actualizado = Date.now();   // el servidor toma las notas del documento más nuevo
     }
   }
   editandoNota = null;

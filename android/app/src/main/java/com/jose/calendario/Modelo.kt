@@ -184,23 +184,32 @@ object Store {
                     val catId = u.categorias.firstOrNull { normTxt(it.nombre) == normTxt(catNombre) }?.id ?: ""
                     u.copy(notas = u.notas + conOrigen.copy(
                         id = newId(), catId = catId, done = false,
-                        hechas = emptyMap(), excluidas = emptyList()))
+                        hechas = emptyMap(), excluidas = emptyList()),
+                        actualizado = System.currentTimeMillis())   // el servidor toma las notas del doc más nuevo
                 } else u
             })
         }
         guardar()
     }
 
-    /** Ediciones de una nota compartida se reflejan en las copias de los otros usuarios. */
+    /** Ediciones de una nota compartida se reflejan en las copias de los otros
+        usuarios. Sube el "actualizado" de los usuarios tocados: el servidor solo
+        toma una nota existente (por id) del documento más nuevo. */
     private fun propagarNota(n: Nota){
+        val ahora = System.currentTimeMillis()
         app = app.copy(users = app.users.map { u ->
             if (u.id == app.currentUserId) u
-            else u.copy(notas = u.notas.map { copia ->
-                if (copia.origenId == n.origenId && copia.id != n.id)
-                    copia.copy(titulo = n.titulo, desc = n.desc, fecha = n.fecha, hora = n.hora,
-                        repeticion = n.repeticion, avisos = n.avisos, color = n.color)
-                else copia
-            })
+            else {
+                var toco = false
+                val notas = u.notas.map { copia ->
+                    if (copia.origenId == n.origenId && copia.id != n.id){
+                        toco = true
+                        copia.copy(titulo = n.titulo, desc = n.desc, fecha = n.fecha, hora = n.hora,
+                            repeticion = n.repeticion, avisos = n.avisos, color = n.color)
+                    } else copia
+                }
+                if (toco) u.copy(notas = notas, actualizado = ahora) else u
+            }
         })
     }
 
