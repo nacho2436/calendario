@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=13">
+<link rel="stylesheet" href="styles.css?v=14">
 </head>
 <body data-theme="claro">
 <div class="app">
@@ -188,6 +188,11 @@
         <div class="avisos" id="noteAvisos"></div>
         <small class="hint-inline">Puedes elegir varios. Las notificaciones salen mientras la página esté abierta.</small>
       </div>
+      <div class="field" id="campoCompartir" hidden>
+        <label>Compartir con otro usuario</label>
+        <div class="avisos" id="noteCompartir"></div>
+        <small class="hint-inline">Aparecerá también en su calendario. Cada uno la tacha o elimina por separado; los cambios de texto se comparten.</small>
+      </div>
       <div class="field">
         <label for="noteDesc">Descripción (opcional)</label>
         <textarea class="input" id="noteDesc" rows="3" maxlength="500" placeholder="Detalles del recordatorio..."></textarea>
@@ -296,6 +301,6 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="app.js?v=13"></script>
+<script src="app.js?v=14"></script>
 </body>
 </html>

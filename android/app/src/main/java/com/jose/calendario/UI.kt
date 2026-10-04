@@ -451,12 +451,13 @@ fun PantallaCalendario(sn: SnackbarHostState) {
     notaEdit?.let { n ->
         DialogoNota(nota = n, fechaInicial = n.fecha,
             onCerrar = { notaEdit = null },
-            onGuardar = { nueva -> Store.guardarNota(nueva, n.id); notaEdit = null; aviso("Nota actualizada ✏️") })
+            onGuardar = { nueva, con -> Store.guardarNota(nueva, n.id, con); notaEdit = null; aviso("Nota actualizada ✏️") })
     }
     nuevaFecha?.let { f ->
         DialogoNota(nota = null, fechaInicial = f,
             onCerrar = { nuevaFecha = null },
-            onGuardar = { nueva -> Store.guardarNota(nueva, null); nuevaFecha = null; aviso("Nota creada 📝") })
+            onGuardar = { nueva, con -> Store.guardarNota(nueva, null, con); nuevaFecha = null
+                aviso(if (con.isEmpty()) "Nota creada 📝" else "Nota creada y compartida 👥") })
     }
     diaAbierto?.let { key ->
         DialogoDia(
@@ -954,12 +955,13 @@ fun PantallaNotas(sn: SnackbarHostState) {
     notaEdit?.let { n ->
         DialogoNota(nota = n, fechaInicial = n.fecha,
             onCerrar = { notaEdit = null },
-            onGuardar = { nueva -> Store.guardarNota(nueva, n.id); notaEdit = null; aviso("Nota actualizada ✏️") })
+            onGuardar = { nueva, con -> Store.guardarNota(nueva, n.id, con); notaEdit = null; aviso("Nota actualizada ✏️") })
     }
     if (nueva) {
         DialogoNota(nota = null, fechaInicial = LocalDate.now().toString(),
             onCerrar = { nueva = false },
-            onGuardar = { Store.guardarNota(it, null); nueva = false; aviso("Nota creada 📝") })
+            onGuardar = { n2, con -> Store.guardarNota(n2, null, con); nueva = false
+                aviso(if (con.isEmpty()) "Nota creada 📝" else "Nota creada y compartida 👥") })
     }
     eliminarRepetida?.let { (n, f) ->
         DialogoEliminarRepetida(nota = n,
@@ -1002,6 +1004,7 @@ fun TarjetaNota(n: Nota, compacta: Boolean = false, fecha: String = "", onEditar
         if (n.hora.isNotEmpty()) { if (isNotEmpty()) append(" · "); append("⏰ ${fmtHora(n.hora)}") }
         if (n.repeticion.isNotEmpty()) { if (isNotEmpty()) append(" · "); append("🔁 ${Repeticiones.CORTO[n.repeticion] ?: ""}") }
         if (n.avisos.isNotEmpty()) { if (isNotEmpty()) append(" · "); append("🔔 ${n.avisos.joinToString(", ") { AvisosDef.corto(it) }} antes") }
+        if (n.origenId.isNotEmpty()) { if (isNotEmpty()) append(" · "); append("👥 compartida") }
     }
 
     Surface(
@@ -1369,7 +1372,7 @@ fun SeccionSincronizacion() {
 /* ─────────── diálogos ─────────── */
 
 @Composable
-fun DialogoNota(nota: Nota?, fechaInicial: String, onCerrar: () -> Unit, onGuardar: (Nota) -> Unit) {
+fun DialogoNota(nota: Nota?, fechaInicial: String, onCerrar: () -> Unit, onGuardar: (Nota, List<String>) -> Unit) {
     val contexto = LocalContext.current
     val cats = Store.usuario.categorias
     var titulo by remember { mutableStateOf(nota?.titulo ?: "") }
@@ -1389,6 +1392,8 @@ fun DialogoNota(nota: Nota?, fechaInicial: String, onCerrar: () -> Unit, onGuard
     var mostrarHora by remember { mutableStateOf(false) }
     var menuCats by remember { mutableStateOf(false) }
     var menuRep by remember { mutableStateOf(false) }
+    val otros = Store.app.users.filter { it.id != Store.app.currentUserId }
+    var compartidos by remember { mutableStateOf(emptyList<String>()) }
     val permisoNotif = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
     AlertDialog(
@@ -1467,6 +1472,24 @@ fun DialogoNota(nota: Nota?, fechaInicial: String, onCerrar: () -> Unit, onGuard
                         )
                     }
                 }
+                if (nota == null && otros.isNotEmpty()) {
+                    Spacer(Modifier.height(10.dp))
+                    Text("Compartir con (opcional)", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Aparece también en su calendario; cada uno la tacha o elimina por separado.",
+                        fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(6.dp))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        otros.forEach { u ->
+                            FilterChip(
+                                selected = compartidos.contains(u.id),
+                                onClick = {
+                                    compartidos = if (compartidos.contains(u.id)) compartidos - u.id else compartidos + u.id
+                                },
+                                label = { Text("${u.avatar} ${u.nombre}") },
+                            )
+                        }
+                    }
+                }
                 Spacer(Modifier.height(10.dp))
                 OutlinedTextField(desc, { desc = it }, label = { Text("Descripción (opcional)") },
                     modifier = Modifier.fillMaxWidth(), minLines = 2)
@@ -1481,7 +1504,8 @@ fun DialogoNota(nota: Nota?, fechaInicial: String, onCerrar: () -> Unit, onGuard
                         catId = catId, color = color, repeticion = repeticion, avisos = avisos,
                         done = nota?.done ?: false,
                         creada = nota?.creada ?: System.currentTimeMillis(),
-                    ))
+                        origenId = nota?.origenId ?: "",
+                    ), if (nota == null) compartidos else emptyList())
                     if (avisos.isNotEmpty()) pedirPermisoNotificaciones(contexto, permisoNotif)
                 }
             }) { Text("Guardar") }

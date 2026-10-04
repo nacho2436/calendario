@@ -26,6 +26,7 @@ data class Nota(
     val done: Boolean = false,
     val hechas: Map<String, Long> = emptyMap(),   // tachadas por fecha (repetitivas)
     val excluidas: List<String> = emptyList(),    // ocurrencias eliminadas por separado
+    val origenId: String = "",                   // notas compartidas: id común de todas las copias
     val creada: Long = System.currentTimeMillis(),
 )
 
@@ -167,12 +168,40 @@ object Store {
 
     /* ─────────── acciones ─────────── */
 
-    fun guardarNota(n: Nota, idEdicion: String?) {
+    fun guardarNota(n: Nota, idEdicion: String?, compartirCon: List<String> = emptyList()) {
         val usr = usuario
+        val conOrigen = if (compartirCon.isNotEmpty() && idEdicion == null && n.origenId.isEmpty())
+            n.copy(origenId = newId()) else n
         app = conUsuario(usr.copy(notas =
-            if (idEdicion == null) usr.notas + n
-            else usr.notas.map { if (it.id == idEdicion) n else it }))
+            if (idEdicion == null) usr.notas + conOrigen
+            else usr.notas.map { if (it.id == idEdicion) conOrigen else it }))
+        if (idEdicion != null && conOrigen.origenId.isNotEmpty()) propagarNota(conOrigen)
+        if (idEdicion == null && conOrigen.origenId.isNotEmpty()){
+            // copia para cada usuario con quien se comparte (categoría por nombre)
+            val catNombre = usr.categorias.firstOrNull { it.id == conOrigen.catId }?.nombre
+            app = app.copy(users = app.users.map { u ->
+                if (compartirCon.contains(u.id)){
+                    val catId = u.categorias.firstOrNull { normTxt(it.nombre) == normTxt(catNombre) }?.id ?: ""
+                    u.copy(notas = u.notas + conOrigen.copy(
+                        id = newId(), catId = catId, done = false,
+                        hechas = emptyMap(), excluidas = emptyList()))
+                } else u
+            })
+        }
         guardar()
+    }
+
+    /** Ediciones de una nota compartida se reflejan en las copias de los otros usuarios. */
+    private fun propagarNota(n: Nota){
+        app = app.copy(users = app.users.map { u ->
+            if (u.id == app.currentUserId) u
+            else u.copy(notas = u.notas.map { copia ->
+                if (copia.origenId == n.origenId && copia.id != n.id)
+                    copia.copy(titulo = n.titulo, desc = n.desc, fecha = n.fecha, hora = n.hora,
+                        repeticion = n.repeticion, avisos = n.avisos, color = n.color)
+                else copia
+            })
+        })
     }
 
     fun alternarNota(id: String, fecha: String = "") {
@@ -430,6 +459,7 @@ object Store {
         n.hechas.forEach { (k, v) -> hechasJson.put(k, v) }
         put("hechas", hechasJson)
         put("excluidas", JSONArray(n.excluidas))
+        if (n.origenId.isNotEmpty()) put("origenId", n.origenId)
     }
     private fun notaDeJson(o: JSONObject) = Nota(
         id = o.getString("id"), titulo = o.getString("titulo"),
@@ -446,6 +476,7 @@ object Store {
         excluidas = o.optJSONArray("excluidas")?.let { ja ->
             (0 until ja.length()).map { ja.optString(it) }.filter { it.isNotEmpty() }
         } ?: emptyList(),
+        origenId = o.optString("origenId", ""),
         creada = o.optLong("creada", System.currentTimeMillis()),
     )
 

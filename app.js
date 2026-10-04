@@ -790,7 +790,7 @@ function notaCardHTML(n, { conFecha = true, fecha = null } = {}){
         <h4>${esc(n.titulo)}</h4>
         <span class="chip" style="--c:${colorCat}">${esc(nombreCat)}</span>
       </div>
-      <p class="note-meta">${conFecha ? '📅 ' + esc(fmtFechaLarga(proximaFecha(n))) : ''}${n.hora ? (conFecha ? ' · ⏰ ' : '⏰ ') + fmtHora(n.hora) : ''}${n.repeticion ? ' · 🔁 ' + REP_CORTO[n.repeticion] : ''}${n.avisos?.length ? ' · 🔔 ' + esc(avisosDe(n)) + ' antes' : ''}</p>
+      <p class="note-meta">${conFecha ? '📅 ' + esc(fmtFechaLarga(proximaFecha(n))) : ''}${n.hora ? (conFecha ? ' · ⏰ ' : '⏰ ') + fmtHora(n.hora) : ''}${n.repeticion ? ' · 🔁 ' + REP_CORTO[n.repeticion] : ''}${n.avisos?.length ? ' · 🔔 ' + esc(avisosDe(n)) + ' antes' : ''}${n.origenId ? ' · 👥' : ''}</p>
       ${n.desc ? `<p class="note-desc">${esc(n.desc)}</p>` : ''}
     </div>
     <div class="note-actions">
@@ -892,11 +892,41 @@ function abrirModalNota(nota = null, fechaPreset = null){
   $('#noteDesc').value  = nota?.desc || '';
   $('#noteRep').value   = nota?.repeticion || '';
   setAvisos(nota?.avisos || []);
+  pintarCompartir();
   llenarSelectCats($('#noteCat'), nota?.catId);
   notePicker = construirSwatches($('#noteSwatches'), { auto: true, valor: nota?.color || '' });
   abrirModal('modal-note');
   setTimeout(() => $('#noteTitle').focus(), 80);
 }
+/* Compartir nota con otros usuarios */
+const catIdPorNombre = (usuario, nombre) => {
+  const n = normTxt(nombre);
+  return usuario?.categorias.find(c => normTxt(c.nombre) === n)?.id || '';
+};
+function pintarCompartir(){
+  const otros = state.users.filter(u => u.id !== state.currentUserId);
+  $('#campoCompartir').hidden = !!editandoNota || !otros.length;
+  $('#noteCompartir').innerHTML = otros.map(u =>
+    `<button type="button" class="aviso-chip" data-user="${u.id}">${esc(u.avatar)} ${esc(u.nombre)}</button>`).join('');
+}
+function getCompartir(){
+  return $$('#noteCompartir .aviso-chip.selected').map(c => c.dataset.user);
+}
+/** Copia la nota para otros usuarios y propaga ediciones de las compartidas. */
+function propagarNota(nota){
+  for (const u of state.users){
+    if (u.id === state.currentUserId) continue;
+    for (const copia of u.notas){
+      if (copia.origenId === nota.origenId && copia.id !== nota.id){
+        Object.assign(copia, {
+          titulo: nota.titulo, desc: nota.desc, fecha: nota.fecha, hora: nota.hora,
+          repeticion: nota.repeticion, avisos: nota.avisos, color: nota.color,
+        });
+      }
+    }
+  }
+}
+
 /* Selección múltiple de avisos en el formulario */
 function setAvisos(arr){
   $$('#noteAvisos .aviso-chip').forEach(c => c.classList.toggle('selected', arr.includes(+c.dataset.min)));
@@ -1004,12 +1034,24 @@ function guardarNota(e){
     avisos: getAvisos(),
   };
   if (!datos.titulo || !datos.fecha) return;
-  if (esEdicion) Object.assign(editandoNota, datos);
-  else yo().notas.push({ id: uid('note'), done: false, creada: Date.now(), ...datos });
+  const compartir = esEdicion ? [] : getCompartir();
+  if (compartir.length) datos.origenId = uid('comp');
+  if (esEdicion){
+    Object.assign(editandoNota, datos);
+    if (editandoNota.origenId) propagarNota(editandoNota);
+  } else {
+    yo().notas.push({ id: uid('note'), done: false, hechas: {}, excluidas: [], creada: Date.now(), ...datos });
+    for (const idUser of compartir){
+      const otro = state.users.find(u => u.id === idUser);
+      if (!otro) continue;
+      otro.notas.push({ id: uid('note'), done: false, hechas: {}, excluidas: [], creada: Date.now(),
+        ...datos, catId: catIdPorNombre(otro, catDe(datos)?.nombre) });
+    }
+  }
   editandoNota = null;
   guardar();
   cerrarModal($('#modal-note'));
-  toast(esEdicion ? 'Nota actualizada ✏️' : 'Nota creada 📝');
+  toast(esEdicion ? 'Nota actualizada ✏️' : (compartir?.length ? `Nota creada y compartida con ${compartir.length} usuario(s) 👥` : 'Nota creada 📝'));
   refrescarTrasCambio();
   // pedir permiso de notificaciones al guardar una nota con avisos
   if (datos.avisos.length && 'Notification' in window && Notification.permission === 'default'){
@@ -1262,6 +1304,10 @@ async function inicializar(){
   $('#noteAvisos').innerHTML = AVISOS_DEF.map(a =>
     `<button type="button" class="aviso-chip" data-min="${a.min}" title="${a.label}">${a.corto}</button>`).join('');
   $('#noteAvisos').addEventListener('click', e => {
+    const c = e.target.closest('.aviso-chip');
+    if (c) c.classList.toggle('selected');
+  });
+  $('#noteCompartir').addEventListener('click', e => {
     const c = e.target.closest('.aviso-chip');
     if (c) c.classList.toggle('selected');
   });
