@@ -1393,7 +1393,12 @@ fun DialogoNota(nota: Nota?, fechaInicial: String, onCerrar: () -> Unit, onGuard
     var menuCats by remember { mutableStateOf(false) }
     var menuRep by remember { mutableStateOf(false) }
     val otros = Store.app.users.filter { it.id != Store.app.currentUserId }
-    var compartidos by remember { mutableStateOf(emptyList<String>()) }
+    // al editar: pre-marcados los usuarios que ya tienen copia de la nota
+    val iniciales: List<String> = if (nota != null && nota.origenId.isNotEmpty())
+        Store.app.users.filter { it.id != Store.app.currentUserId &&
+            it.notas.any { c -> c.origenId == nota.origenId && c.id != nota.id } }.map { it.id }
+    else emptyList()
+    var compartidos by remember { mutableStateOf(iniciales) }
     val permisoNotif = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
     AlertDialog(
@@ -1472,10 +1477,10 @@ fun DialogoNota(nota: Nota?, fechaInicial: String, onCerrar: () -> Unit, onGuard
                         )
                     }
                 }
-                if (nota == null && otros.isNotEmpty()) {
+                if (otros.isNotEmpty()) {
                     Spacer(Modifier.height(10.dp))
                     Text("Compartir con (opcional)", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("Aparece también en su calendario; cada uno la tacha o elimina por separado.",
+                    Text("Los marcados la verán también en su calendario; cada uno la tacha o elimina por separado. Desmarca para dejar de compartirla.",
                         fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(6.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1505,7 +1510,7 @@ fun DialogoNota(nota: Nota?, fechaInicial: String, onCerrar: () -> Unit, onGuard
                         done = nota?.done ?: false,
                         creada = nota?.creada ?: System.currentTimeMillis(),
                         origenId = nota?.origenId ?: "",
-                    ), if (nota == null) compartidos else emptyList())
+                    ), compartidos)
                     if (avisos.isNotEmpty()) pedirPermisoNotificaciones(contexto, permisoNotif)
                 }
             }) { Text("Guardar") }

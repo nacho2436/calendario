@@ -170,26 +170,41 @@ object Store {
 
     fun guardarNota(n: Nota, idEdicion: String?, compartirCon: List<String> = emptyList()) {
         val usr = usuario
-        val conOrigen = if (compartirCon.isNotEmpty() && idEdicion == null && n.origenId.isEmpty())
+        // nota final: gana origenId si se comparte (nota nueva o existente sin compartir)
+        val conOrigen = if (compartirCon.isNotEmpty() && n.origenId.isEmpty())
             n.copy(origenId = newId()) else n
         app = conUsuario(usr.copy(notas =
             if (idEdicion == null) usr.notas + conOrigen
             else usr.notas.map { if (it.id == idEdicion) conOrigen else it }))
         if (idEdicion != null && conOrigen.origenId.isNotEmpty()) propagarNota(conOrigen)
-        if (idEdicion == null && conOrigen.origenId.isNotEmpty()){
-            // copia para cada usuario con quien se comparte (categoría por nombre)
-            val catNombre = usr.categorias.firstOrNull { it.id == conOrigen.catId }?.nombre
-            app = app.copy(users = app.users.map { u ->
-                if (compartirCon.contains(u.id)){
-                    val catId = u.categorias.firstOrNull { normTxt(it.nombre) == normTxt(catNombre) }?.id ?: ""
-                    u.copy(notas = u.notas + conOrigen.copy(
-                        id = newId(), catId = catId, done = false,
-                        hechas = emptyMap(), excluidas = emptyList()),
-                        actualizado = System.currentTimeMillis())   // el servidor toma las notas del doc más nuevo
-                } else u
-            })
-        }
+        if (conOrigen.origenId.isNotEmpty()) sincronizarCompartidos(conOrigen, compartirCon)
         guardar()
+    }
+
+    /** Añade o quita las copias en otros usuarios según los chips marcados del
+        diálogo (compartir notas nuevas o existentes, o dejar de compartir). */
+    private fun sincronizarCompartidos(nota: Nota, seleccion: List<String>){
+        val catNombre = usuario.categorias.firstOrNull { it.id == nota.catId }?.nombre
+        val ahora = System.currentTimeMillis()
+        app = app.copy(users = app.users.map { u ->
+            if (u.id == app.currentUserId) u
+            else {
+                val copia = u.notas.firstOrNull { it.origenId == nota.origenId && it.id != nota.id }
+                when {
+                    seleccion.contains(u.id) && copia == null ->
+                        u.copy(notas = u.notas + nota.copy(
+                            id = newId(), done = false, hechas = emptyMap(), excluidas = emptyList(),
+                            catId = u.categorias.firstOrNull { normTxt(it.nombre) == normTxt(catNombre) }?.id ?: ""),
+                            actualizado = ahora)   // el servidor toma las notas del doc más nuevo
+                    !seleccion.contains(u.id) && copia != null ->
+                        u.copy(notas = u.notas.filter { it.id != copia.id },
+                            notasEliminadas = u.notasEliminadas +
+                                BajaNota(copia.id, copia.titulo, copia.fecha, ahora),
+                            actualizado = ahora)
+                    else -> u
+                }
+            }
+        })
     }
 
     /** Ediciones de una nota compartida se reflejan en las copias de los otros

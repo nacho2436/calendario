@@ -892,7 +892,7 @@ function abrirModalNota(nota = null, fechaPreset = null){
   $('#noteDesc').value  = nota?.desc || '';
   $('#noteRep').value   = nota?.repeticion || '';
   setAvisos(nota?.avisos || []);
-  pintarCompartir();
+  pintarCompartir(nota);
   llenarSelectCats($('#noteCat'), nota?.catId);
   notePicker = construirSwatches($('#noteSwatches'), { auto: true, valor: nota?.color || '' });
   abrirModal('modal-note');
@@ -903,14 +903,45 @@ const catIdPorNombre = (usuario, nombre) => {
   const n = normTxt(nombre);
   return usuario?.categorias.find(c => normTxt(c.nombre) === n)?.id || '';
 };
-function pintarCompartir(){
+function usuariosConCopia(nota){
+  if (!nota?.origenId) return [];
+  return state.users.filter(u => u.id !== state.currentUserId &&
+    u.notas.some(n => n.origenId === nota.origenId && n.id !== nota.id));
+}
+function pintarCompartir(nota = null){
   const otros = state.users.filter(u => u.id !== state.currentUserId);
-  $('#campoCompartir').hidden = !!editandoNota || !otros.length;
+  $('#campoCompartir').hidden = !otros.length;
+  const marcados = usuariosConCopia(nota).map(u => u.id);
   $('#noteCompartir').innerHTML = otros.map(u =>
-    `<button type="button" class="aviso-chip" data-user="${u.id}">${esc(u.avatar)} ${esc(u.nombre)}</button>`).join('');
+    `<button type="button" class="aviso-chip${marcados.includes(u.id) ? ' selected' : ''}" data-user="${u.id}">${esc(u.avatar)} ${esc(u.nombre)}</button>`).join('');
 }
 function getCompartir(){
   return $$('#noteCompartir .aviso-chip.selected').map(c => c.dataset.user);
+}
+/** Añade o quita copias en otros usuarios según los chips marcados;
+    devuelve cuántas creó y cuántas quitó (para el aviso). */
+function sincronizarCompartidos(nota, seleccion){
+  let nuevas = 0, quitadas = 0;
+  const miCat = yo().categorias.find(c => c.id === nota.catId);
+  for (const u of state.users){
+    if (u.id === state.currentUserId) continue;
+    const copia = u.notas.find(n => n.origenId === nota.origenId && n.id !== nota.id);
+    if (seleccion.includes(u.id) && !copia){
+      u.notas.push({ id: uid('note'), done: false, hechas: {}, excluidas: [], creada: Date.now(),
+        titulo: nota.titulo, desc: nota.desc, fecha: nota.fecha, hora: nota.hora,
+        repeticion: nota.repeticion, avisos: nota.avisos, color: nota.color,
+        origenId: nota.origenId, catId: catIdPorNombre(u, miCat?.nombre) });
+      u.actualizado = Date.now();   // el servidor toma las notas del documento más nuevo
+      nuevas++;
+    } else if (!seleccion.includes(u.id) && copia){
+      u.notas = u.notas.filter(n => n !== copia);
+      u.notasEliminadas = u.notasEliminadas || [];
+      u.notasEliminadas.push({ id: copia.id, titulo: copia.titulo, fecha: copia.fecha, ts: Date.now() });
+      u.actualizado = Date.now();
+      quitadas++;
+    }
+  }
+  return { nuevas, quitadas };
 }
 /** Copia la nota para otros usuarios y propaga ediciones de las compartidas.
     Sube el "actualizado" de los usuarios tocados: el servidor solo toma una
@@ -1040,25 +1071,29 @@ function guardarNota(e){
     avisos: getAvisos(),
   };
   if (!datos.titulo || !datos.fecha) return;
-  const compartir = esEdicion ? [] : getCompartir();
-  if (compartir.length) datos.origenId = uid('comp');
+  const compartir = getCompartir();   // también al editar: añade o quita copias según los chips
+  if (compartir.length && !(esEdicion && editandoNota.origenId)) datos.origenId = uid('comp');
+  let cambios = { nuevas: 0, quitadas: 0 };
+  let notaFinal;
   if (esEdicion){
     Object.assign(editandoNota, datos);
-    if (editandoNota.origenId) propagarNota(editandoNota);
+    notaFinal = editandoNota;
+    if (notaFinal.origenId) propagarNota(notaFinal);   // actualiza las copias existentes
   } else {
     yo().notas.push({ id: uid('note'), done: false, hechas: {}, excluidas: [], creada: Date.now(), ...datos });
-    for (const idUser of compartir){
-      const otro = state.users.find(u => u.id === idUser);
-      if (!otro) continue;
-      otro.notas.push({ id: uid('note'), done: false, hechas: {}, excluidas: [], creada: Date.now(),
-        ...datos, catId: catIdPorNombre(otro, catDe(datos)?.nombre) });
-      otro.actualizado = Date.now();   // el servidor toma las notas del documento más nuevo
-    }
+    notaFinal = yo().notas[yo().notas.length - 1];
   }
+  if (notaFinal.origenId) cambios = sincronizarCompartidos(notaFinal, compartir);
   editandoNota = null;
   guardar();
   cerrarModal($('#modal-note'));
-  toast(esEdicion ? 'Nota actualizada ✏️' : (compartir?.length ? `Nota creada y compartida con ${compartir.length} usuario(s) 👥` : 'Nota creada 📝'));
+  if (esEdicion){
+    const extra = (cambios.nuevas ? ` · compartida con ${cambios.nuevas} 👥` : '') +
+                  (cambios.quitadas ? ` · quitada a ${cambios.quitadas}` : '');
+    toast(`Nota actualizada ✏️${extra}`);
+  } else {
+    toast(compartir.length ? `Nota creada y compartida con ${compartir.length} usuario(s) 👥` : 'Nota creada 📝');
+  }
   refrescarTrasCambio();
   // pedir permiso de notificaciones al guardar una nota con avisos
   if (datos.avisos.length && 'Notification' in window && Notification.permission === 'default'){
