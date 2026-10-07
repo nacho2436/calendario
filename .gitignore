@@ -30,6 +30,8 @@ Thumbs.db
 node_modules/
 .zcode/
 datos/
+__pycache__/
+*.pyc
 
 # ── Instaladores (van como adjuntos de Releases) ─────
 *.deb
