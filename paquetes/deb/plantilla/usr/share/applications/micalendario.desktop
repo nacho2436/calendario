@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Mi Calendario
+GenericName=Calendario con notas
+Comment=Abrir Mi Calendario (requiere el servidor encendido)
+Exec=xdg-open http://127.0.0.1:8177
+Icon=office-calendar
+Terminal=false
+Categories=Office;Calendar;
+StartupNotify=true

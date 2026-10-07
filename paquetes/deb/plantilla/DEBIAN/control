@@ -1,0 +1,19 @@
+Package: micalendario
+Version: 2.5
+Section: web
+Priority: optional
+Architecture: all
+Depends: python3 (>= 3.8)
+Recommends: xdg-utils, systemd
+Maintainer: Jose <nacho2436@users.noreply.github.com>
+Description: Calendario web con notas, categorias y festivos de Colombia
+ Servidor web local (puerto 8177) con base de datos SQLite, notas
+ repetitivas y compartidas, varios temas y sincronizacion con la app
+ Android por codigo de vinculacion en la misma red WiFi.
+ .
+ El servidor corre como servicio de usuario de systemd:
+  - Encender : systemctl --user start micalendario
+  - Apagar   : systemctl --user stop micalendario
+  - Estado   : systemctl --user status micalendario
+  - Menu     : micalendario-menu
+ Los datos se guardan en ~/.local/share/micalendario

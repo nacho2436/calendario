@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Instalador MSI de Mi Calendario (se compila con wixl de msitools).
+  Instala la app web en C:\Program Files\Mi Calendario y crea en el
+  menú Inicio accesos para encender/apagar el servicio y abrir la app.
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*" Name="Mi Calendario Colombia" Language="3082"
+           Version="2.5.0" Manufacturer="Jose"
+           UpgradeCode="a7d7a132-7292-4e2c-ad42-f3660de34d80">
+    <Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine"
+             Comments="Calendario web con notas y festivos de Colombia"
+             Description="Mi Calendario Colombia 2.5" />
+    <MajorUpgrade AllowDowngrades="yes" />
+    <MediaTemplate EmbedCab="yes" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/nacho2436/calendario" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/nacho2436/calendario/releases" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+
+    <Feature Id="Completa" Title="Mi Calendario" Level="1"
+             Description="Aplicacion web y servidor local">
+      <ComponentGroupRef Id="App" />
+    </Feature>
+  </Product>
+
+  <Fragment>
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFilesFolder">
+        <Directory Id="INSTALDIR" Name="Mi Calendario" />
+      </Directory>
+      <Directory Id="ProgramMenuFolder">
+        <Directory Id="MenuDir" Name="Mi Calendario" />
+      </Directory>
+    </Directory>
+
+    <ComponentGroup Id="App" Directory="INSTALDIR">
+      <!-- servidor -->
+      <Component Id="c_servidor" Guid="8dbb39ea-23d8-4bf3-8527-5a534cd97435">
+        <File Id="f_servidor" Source="servidor.py" KeyPath="yes" />
+      </Component>
+      <!-- app web -->
+      <Component Id="c_index" Guid="fa961fd9-8d16-44c7-90de-53b9f6ee345e">
+        <File Id="f_index" Source="index.html" KeyPath="yes" />
+      </Component>
+      <Component Id="c_styles" Guid="e86c3f0f-f41b-4b6b-8aed-172cdb4e6b2f">
+        <File Id="f_styles" Source="styles.css" KeyPath="yes" />
+      </Component>
+      <Component Id="c_appjs" Guid="02c9ab19-5b64-4d81-bf77-5d1cbb394d36">
+        <File Id="f_appjs" Source="app.js" KeyPath="yes" />
+      </Component>
+      <Component Id="c_leeme" Guid="ede65cc8-f97e-414a-8970-e51317b4d03e">
+        <File Id="f_leeme" Source="LEEME.txt" KeyPath="yes" />
+      </Component>
+      <!-- encender -->
+      <Component Id="c_iniciar" Guid="0593d4c5-f66e-4038-9e57-5cb5a0f1c566">
+        <File Id="f_iniciar" Source="iniciar-windows.bat">
+          <Shortcut Id="sc_iniciar" Directory="MenuDir" Advertise="no"
+                    Target="[#f_iniciar]" WorkingDirectory="INSTALDIR"
+                    Name="Iniciar servidor y abrir"
+                    Description="Enciende el servidor de Mi Calendario y abre la app" />
+        </File>
+      </Component>
+      <!-- apagar -->
+      <Component Id="c_detener" Guid="1474a41c-d4ac-405a-ba94-58ea62fcf7d2">
+        <File Id="f_detener" Source="detener-windows.bat">
+          <Shortcut Id="sc_detener" Directory="MenuDir" Advertise="no"
+                    Target="[#f_detener]" WorkingDirectory="INSTALDIR"
+                    Name="Detener servidor"
+                    Description="Apaga el servidor de Mi Calendario" />
+        </File>
+      </Component>
+      <!-- abrir -->
+      <Component Id="c_abrir" Guid="f0e19b0e-3d63-4d76-9762-cbf4d259e90c">
+        <File Id="f_abrir" Source="abrir-web.bat">
+          <Shortcut Id="sc_abrir" Directory="MenuDir" Advertise="no"
+                    Target="[#f_abrir]" WorkingDirectory="INSTALDIR"
+                    Name="Abrir Mi Calendario"
+                    Description="Abre Mi Calendario en el navegador" />
+        </File>
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+</Wix>

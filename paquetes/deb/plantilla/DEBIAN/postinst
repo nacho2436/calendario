@@ -1,0 +1,37 @@
+#!/bin/bash
+# Después de instalar: habilita el servicio de usuario y lo arranca si
+# hay una sesión activa del usuario que instaló.
+set -e
+
+# 1) el servicio arranca solo en cada inicio de sesión
+systemctl --global enable micalendario.service >/dev/null 2>&1 || true
+
+# 2) recargar systemd de usuario y arrancar ya (si hay sesión abierta)
+USU="${SUDO_USER:-${USER:-}}"
+if [ -n "$USU" ] && [ "$USU" != "root" ]; then
+    UU="$(id -u "$USU" 2>/dev/null || true)"
+    if [ -n "$UU" ] && [ -d "/run/user/$UU" ]; then
+        sudo -u "$USU" XDG_RUNTIME_DIR="/run/user/$UU" \
+            systemctl --user daemon-reload >/dev/null 2>&1 || true
+        sudo -u "$USU" XDG_RUNTIME_DIR="/run/user/$UU" \
+            systemctl --user start micalendario.service >/dev/null 2>&1 || true
+    fi
+fi
+
+# 3) abrir el firewall local para la sincronización con el celular
+#    (solo si ufw existe y está activo)
+if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q ' active'; then
+    ufw allow 8177/tcp >/dev/null 2>&1 || true
+    ufw allow 8178/udp >/dev/null 2>&1 || true
+fi
+
+echo
+echo "  Mi Calendario instalado"
+echo "  ------------------------------------------"
+echo "  App       : http://127.0.0.1:8177"
+echo "  Encender  : systemctl --user start micalendario"
+echo "  Apagar    : systemctl --user stop micalendario"
+echo "  Menu      : micalendario-menu"
+echo "  Datos     : ~/.local/share/micalendario"
+echo
+exit 0

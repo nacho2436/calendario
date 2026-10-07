@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Mi Calendario - Apagar servidor
+Comment=Detiene el servidor de Mi Calendario
+Exec=systemctl --user stop micalendario.service
+Icon=process-stop
+Terminal=false
+Categories=Settings;System;

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Mi Calendario - Encender servidor
+Comment=Enciende el servidor de Mi Calendario
+Exec=systemctl --user start micalendario.service
+Icon=emblem-default
+Terminal=false
+Categories=Settings;System;

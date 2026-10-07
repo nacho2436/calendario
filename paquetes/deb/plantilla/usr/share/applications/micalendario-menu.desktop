@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Mi Calendario - Menu del servicio
+Comment=Encender, apagar y ver la direccion para el celular
+Exec=micalendario-menu
+Icon=utilities-terminal
+Terminal=true
+Categories=Settings;System;

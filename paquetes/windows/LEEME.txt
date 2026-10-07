@@ -1,0 +1,34 @@
+Mi Calendario Colombia - version web para Windows
+==================================================
+
+REQUISITO
+  Python 3 (gratis): https://www.python.org/downloads/
+  Al instalarlo marca la casilla "Add Python to PATH".
+
+ARCHIVOS
+  App      : C:\Program Files\Mi Calendario\
+  Datos    : %LOCALAPPDATA%\MiCalendario\  (base de datos y bitacora)
+
+ENCENDER / APAGAR EL SERVICIO
+  Menu Inicio > Mi Calendario:
+    - "Iniciar servidor y abrir" : enciende el servidor (minimizado)
+      y abre la app en el navegador
+    - "Detener servidor"         : apaga el servidor
+    - "Abrir Mi Calendario"      : abre la app (el servidor debe estar
+      encendido)
+
+USO
+  En este equipo : http://127.0.0.1:8177
+  En el celular  : http://<IP-de-este-equipo>:8177   (misma red WiFi)
+  La app Android se vincula con "Buscar dispositivos" y el codigo de
+  6 digitos que genera la web (pestana Usuarios).
+
+  La primera vez Windows puede preguntar si permites que Python se
+  comunique en la red: responde "Permitir acceso" para poder
+  sincronizar con el celular.
+
+DESINSTALAR
+  Configuracion > Aplicaciones > Mi Calendario Colombia.
+  Los datos (%LOCALAPPDATA%\MiCalendario) se conservan.
+
+Proyecto: https://github.com/nacho2436/calendario

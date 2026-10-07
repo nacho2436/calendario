@@ -1,0 +1,26 @@
+Mi Calendario Colombia (versión web, paquete deb)
+=================================================
+
+ARCHIVOS
+  App        : /opt/micalendario/{index.html, app.js, styles.css}
+  Servidor   : /opt/micalendario/servidor.py   (solo Python 3)
+  Datos      : ~/.local/share/micalendario/     (SQLite + bitácora)
+
+SERVICIO (encender / apagar)
+  Encender   : systemctl --user start micalendario
+  Apagar     : systemctl --user stop micalendario
+  Reiniciar  : systemctl --user restart micalendario
+  Estado     : systemctl --user status micalendario
+  Menú fácil : micalendario-menu   (o el acceso del menú de aplicaciones)
+
+  El servicio arranca solo al iniciar la sesión. También hay accesos
+  "Mi Calendario - Encender/Apagar servidor" en el menú de aplicaciones.
+
+USO
+  En este equipo : http://127.0.0.1:8177
+  En el celular  : http://<IP-de-este-equipo>:8177  (misma red WiFi)
+  La app Android se vincula con "Buscar dispositivos" y el código
+  de 6 dígitos que genera la web en la pestaña Usuarios.
+
+SINCRONIZAR DESARROLLO
+  El proyecto fuente está en https://github.com/nacho2436/calendario

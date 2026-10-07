@@ -30,3 +30,8 @@ Thumbs.db
 node_modules/
 .zcode/
 datos/
+
+# ── Instaladores (van como adjuntos de Releases) ─────
+*.deb
+*.msi
+paquetes/dist/

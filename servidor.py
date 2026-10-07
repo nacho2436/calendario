@@ -10,10 +10,14 @@
 #                        gana por "actualizado") y devuelve el resultado
 #  - Los datos viven en datos/calendario.sqlite
 # ============================================================
+import atexit
 import json
 import os
 import random
+import signal
 import sqlite3
+import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -24,8 +28,12 @@ import socket as socket_red
 BASE = os.path.dirname(os.path.abspath(__file__))
 PUERTO = 8177
 PUERTO_DESCUBRIMIENTO = 8178
-DB = os.path.join(BASE, 'datos', 'calendario.sqlite')
-os.makedirs(os.path.dirname(DB), exist_ok=True)
+# Los datos viven junto al script (modo portable) o en el directorio que
+# indique MCALENDARIO_DATOS (lo usan los instaladores deb/msi y systemd).
+DATOS_DIR = os.environ.get('MCALENDARIO_DATOS') or os.path.join(BASE, 'datos')
+DB = os.path.join(DATOS_DIR, 'calendario.sqlite')
+PID_ARCHIVO = os.path.join(DATOS_DIR, 'servidor.pid')
+os.makedirs(DATOS_DIR, exist_ok=True)
 CANDADO = threading.Lock()
 CANDADO_LOG = threading.Lock()
 
@@ -191,7 +199,7 @@ def fusionar(entrantes, bajas_entrantes=None):
             return finales, _leer_bajas(con)
 
 
-ID_ARCHIVO = os.path.join(BASE, 'datos', 'id_servidor.txt')
+ID_ARCHIVO = os.path.join(DATOS_DIR, 'id_servidor.txt')
 
 
 def id_servidor():
@@ -306,7 +314,7 @@ class Manejador(BaseHTTPRequestHandler):
                         CODIGO['usado'] = True
                 if ok:
                     with CANDADO_LOG:
-                        with open(os.path.join(BASE, 'datos', 'servidor.log'), 'a') as f:
+                        with open(os.path.join(DATOS_DIR, 'servidor.log'), 'a') as f:
                             f.write(f'{time.strftime("%Y-%m-%d %H:%M:%S")} {self.client_address[0]} '
                                     f'VINCULADO dispositivo={d.get("dispositivo", "?")}\n')
                     return self.json_({'ok': True, 'servidor': gethostname(), 'puerto': PUERTO})
@@ -328,7 +336,7 @@ class Manejador(BaseHTTPRequestHandler):
 
     def log_message(self, fmt, *args):
         with CANDADO_LOG:
-            with open(os.path.join(BASE, 'datos', 'servidor.log'), 'a') as f:
+            with open(os.path.join(DATOS_DIR, 'servidor.log'), 'a') as f:
                 f.write(f'{time.strftime("%Y-%m-%d %H:%M:%S")} {self.client_address[0]} {fmt % args}\n')
 
 
@@ -339,9 +347,46 @@ def ip_lan():
         return '127.0.0.1'
 
 
+def _pid_guardado():
+    try:
+        with open(PID_ARCHIVO) as f:
+            return int(f.read().strip())
+    except (OSError, ValueError):
+        return None
+
+
+def detener_servidor():
+    """Detiene el servidor encendido (lo usa el instalador de Windows)."""
+    pid = _pid_guardado()
+    if pid is None or pid == os.getpid():
+        print('No hay servidor encendido.')
+        return 1
+    try:
+        if os.name == 'nt':
+            subprocess.run(['taskkill', '/PID', str(pid), '/T', '/F'],
+                           capture_output=True)
+        else:
+            os.kill(pid, signal.SIGTERM)
+        print(f'Servidor detenido (pid {pid}).')
+    except (ProcessLookupError, PermissionError):
+        print('El servidor ya estaba apagado.')
+    try:
+        os.remove(PID_ARCHIVO)
+    except OSError:
+        pass
+    return 0
+
+
 if __name__ == '__main__':
+    if len(sys.argv) > 1 and sys.argv[1].lower() in ('stop', '--stop', 'apagar'):
+        sys.exit(detener_servidor())
     threading.Thread(target=hilo_descubrimiento, daemon=True).start()
     srv = ThreadingHTTPServer(('0.0.0.0', PUERTO), Manejador)
+    with open(PID_ARCHIVO, 'w') as f:
+        f.write(str(os.getpid()))
+    atexit.register(lambda: os.remove(PID_ARCHIVO) if os.path.exists(PID_ARCHIVO) else None)
+    if os.name != 'nt':
+        signal.signal(signal.SIGTERM, lambda *a: sys.exit(0))   # apagado limpio
     print(f'✔ Mi Calendario escuchando en el puerto {PUERTO}')
     print(f'   En este equipo : http://localhost:{PUERTO}')
     print(f'   En el celular  : http://{ip_lan()}:{PUERTO}  (misma red WiFi)')

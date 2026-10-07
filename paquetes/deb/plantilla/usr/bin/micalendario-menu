@@ -1,0 +1,40 @@
+#!/bin/bash
+# Menú interactivo del servicio de Mi Calendario (paquete deb).
+# Encender/apagar/reiniciar sin recordar comandos de systemctl.
+IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+
+while true; do
+    clear
+    if systemctl --user is-active --quiet micalendario.service 2>/dev/null; then
+        ESTADO="\033[1;32mENCENDIDO\033[0m"
+    else
+        ESTADO="\033[1;31mAPAGADO\033[0m"
+    fi
+    echo "=========================================="
+    echo "   Mi Calendario - Servicio"
+    echo "=========================================="
+    echo -e " Estado: $ESTADO"
+    echo "------------------------------------------"
+    echo "  1) Encender servidor"
+    echo "  2) Apagar servidor"
+    echo "  3) Reiniciar servidor"
+    echo "  4) Ver estado detallado"
+    echo "  5) Abrir en el navegador"
+    [ -n "$IP" ] && echo "  6) Direccion para el celular"
+    echo "  0) Salir"
+    echo "------------------------------------------"
+    read -r -p " Opcion: " OP
+    case "$OP" in
+        1) systemctl --user start micalendario.service && echo "Servidor encendido." && sleep 1 ;;
+        2) systemctl --user stop micalendario.service && echo "Servidor apagado." && sleep 1 ;;
+        3) systemctl --user restart micalendario.service && echo "Servidor reiniciado." && sleep 1 ;;
+        4) systemctl --user status micalendario.service --no-pager -l | head -15
+           read -r -p "[Enter para continuar] " ;;
+        5) xdg-open http://127.0.0.1:8177 >/dev/null 2>&1 & ;;
+        6) echo; echo "  En el celular (misma red WiFi) abre:"; echo "  http://${IP}:8177"
+           echo "  O usa Buscar dispositivos + codigo de vinculacion."
+           read -r -p "[Enter para continuar] " ;;
+        0) exit 0 ;;
+        *) ;;
+    esac
+done
