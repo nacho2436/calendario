@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Mi Calendario - Menu desplegable
+GenericName=Arranque del servicio
+Comment=Arranca con un menu desplegable: encender, apagar, reiniciar, abrir la app o ver la direccion del celular
+Exec=python3 /opt/micalendario/menu_arranque.py
+Icon=office-calendar
+Terminal=false
+Categories=Office;Calendar;Settings;
+StartupNotify=true

@@ -18,12 +18,13 @@ sed "s/Version=\"[0-9.]*\" Manufacturer/Version=\"$MSI_VERSION\" Manufacturer/" 
     "$RAIZ/paquetes/windows/micalendario.wxs" > "$ESCENARIO/micalendario.wxs"
 
 # 2) copiar los archivos que van dentro del MSI
-for f in index.html app.js styles.css servidor.py; do
+for f in index.html app.js styles.css servidor.py menu_arranque.py; do
     cp "$RAIZ/$f" "$ESCENARIO/$f"
 done
 cp "$RAIZ/paquetes/windows"/iniciar-windows.bat \
    "$RAIZ/paquetes/windows"/detener-windows.bat \
    "$RAIZ/paquetes/windows"/abrir-web.bat \
+   "$RAIZ/paquetes/windows"/menu-windows.bat \
    "$RAIZ/paquetes/windows"/LEEME.txt "$ESCENARIO"/
 
 # 3) compilar el MSI

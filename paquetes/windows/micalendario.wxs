@@ -10,7 +10,7 @@
            UpgradeCode="a7d7a132-7292-4e2c-ad42-f3660de34d80">
     <Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine"
              Comments="Calendario web con notas y festivos de Colombia"
-             Description="Mi Calendario Colombia 2.5" />
+             Description="Mi Calendario Colombia" />
     <MajorUpgrade AllowDowngrades="yes" />
     <MediaTemplate EmbedCab="yes" />
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/nacho2436/calendario" />
@@ -76,6 +76,18 @@
                     Target="[#f_abrir]" WorkingDirectory="INSTALDIR"
                     Name="Abrir Mi Calendario"
                     Description="Abre Mi Calendario en el navegador" />
+        </File>
+      </Component>
+      <!-- menu desplegable del servicio -->
+      <Component Id="c_menupy" Guid="22c796bf-1a15-49d4-88aa-a8a17d3f2808">
+        <File Id="f_menupy" Source="menu_arranque.py" KeyPath="yes" />
+      </Component>
+      <Component Id="c_menubat" Guid="b7548820-5e4e-4d1f-b538-126ee6f663b7">
+        <File Id="f_menubat" Source="menu-windows.bat">
+          <Shortcut Id="sc_menubat" Directory="MenuDir" Advertise="no"
+                    Target="[#f_menubat]" WorkingDirectory="INSTALDIR"
+                    Name="Menú del servicio"
+                    Description="Arranque con menú desplegable: encender, apagar, reiniciar o abrir" />
         </File>
       </Component>
     </ComponentGroup>

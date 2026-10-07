@@ -15,7 +15,7 @@ mkdir -p "$ARBOL" "$DESTINO"
 cp -r "$PLATILLA"/. "$ARBOL"/
 
 # 2) la app web tal cual está en el proyecto
-for f in index.html app.js styles.css servidor.py; do
+for f in index.html app.js styles.css servidor.py menu_arranque.py; do
     cp "$RAIZ/$f" "$ARBOL/opt/micalendario/$f"
 done
 

@@ -29,6 +29,7 @@ echo
 echo "  Mi Calendario instalado"
 echo "  ------------------------------------------"
 echo "  App       : http://127.0.0.1:8177"
+echo "  Arranque  : Mi Calendario - Menu desplegable (en el menu de aplicaciones)"
 echo "  Encender  : systemctl --user start micalendario"
 echo "  Apagar    : systemctl --user stop micalendario"
 echo "  Menu      : micalendario-menu"

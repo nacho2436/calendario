@@ -3,7 +3,7 @@ Version: 2.5
 Section: web
 Priority: optional
 Architecture: all
-Depends: python3 (>= 3.8)
+Depends: python3 (>= 3.8), python3-tk
 Recommends: xdg-utils, systemd
 Maintainer: Jose <nacho2436@users.noreply.github.com>
 Description: Calendario web con notas, categorias y festivos de Colombia
@@ -16,4 +16,6 @@ Description: Calendario web con notas, categorias y festivos de Colombia
   - Apagar   : systemctl --user stop micalendario
   - Estado   : systemctl --user status micalendario
   - Menu     : micalendario-menu
+ Al arrancar hay un menu desplegable (Mi Calendario - Menu desplegable)
+ para encender, apagar, reiniciar o abrir la app con un clic.
  Los datos se guardan en ~/.local/share/micalendario
